@@ -15,7 +15,7 @@ if(NOT TARGET quazip)
     include_directories(${QUAZIP_DIR}/quazip)
 
     # 拷贝输出文件到应用
-    file(GLOB OUTPUTS ${CMAKE_INSTALL_LIBDIR}/quazip*)
+    file(GLOB OUTPUTS ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${CMAKE_BUILD_TYPE}/quazip*)
     file(COPY ${OUTPUTS}
       DESTINATION ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/data-transfer/${CMAKE_BUILD_TYPE})
     message("   >>> copy quazip output libraries:  ${OUTPUTS}")

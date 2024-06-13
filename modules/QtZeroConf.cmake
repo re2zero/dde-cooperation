@@ -10,10 +10,8 @@ if(NOT TARGET QtZeroConf)
   add_subdirectory("${QTZEROCONF_DIR}" QtZeroConf)
 
 if(MSVC)
-message("   >>> QtZeroConf build type: ${CMAKE_BUILD_TYPE}")
-message("   >>> QtZeroConf runtime output directory: ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
   # 拷贝输出文件到应用
-  file(GLOB OUTPUTS ${CMAKE_INSTALL_LIBDIR}/QtZeroConf.*)
+  file(GLOB OUTPUTS ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${CMAKE_BUILD_TYPE}/QtZeroConf.*)
   file(COPY ${OUTPUTS}
     DESTINATION ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/dde-cooperation/${CMAKE_BUILD_TYPE})
   message("   >>> copy QtZeroConf output libraries:  ${OUTPUTS}")
