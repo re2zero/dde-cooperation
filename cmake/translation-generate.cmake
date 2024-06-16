@@ -1,9 +1,11 @@
 function(TRANSLATION_GENERATE QMS)
   find_package(Qt5LinguistTools QUIET)
-
-  if (NOT Qt5_LRELEASE_EXECUTABLE)
-    message(STATUS "set Qt5_LRELEASE_EXECUTABLE = lrelease")
-    set(Qt5_LRELEASE_EXECUTABLE "lrelease")
+  #国际化
+  find_program(QT_LUPDATE NAMES lupdate)
+  find_program(QT_LRELEASE NAMES lrelease)
+  if (NOT QT_LRELEASE)
+    message(STATUS "set QT_LRELEASE = lrelease")
+    set(QT_LRELEASE "lrelease")
   endif()
 
   if(NOT ARGN)
@@ -23,9 +25,9 @@ function(TRANSLATION_GENERATE QMS)
       add_custom_command(
           OUTPUT ${QMFIL}
           # COMMAND ${Qt5_LUPDATE_EXECUTABLE} ${CMAKE_SOURCE_DIR} -ts ${TSFIL}
-          COMMAND ${Qt5_LRELEASE_EXECUTABLE} ${TSFIL} -qm ${QMFIL}
+          COMMAND ${QT_LRELEASE} ${TSFIL} -qm ${QMFIL}
           DEPENDS ${TSFIL}
-          COMMENT "Running ${Qt5_LRELEASE_EXECUTABLE} on ${TSFIL}"
+          COMMENT "Running ${QT_LRELEASE} on ${TSFIL}"
           VERBATIM
       )
   endforeach()

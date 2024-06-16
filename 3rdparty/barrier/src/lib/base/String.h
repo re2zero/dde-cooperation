@@ -22,6 +22,7 @@
 #include "common/stdstring.h"
 
 #include <stdarg.h>
+#include <cstdint>
 #include <vector>
 
 // use standard C++ string class for our string class
