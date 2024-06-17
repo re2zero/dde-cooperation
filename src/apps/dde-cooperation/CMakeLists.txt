@@ -1,4 +1,10 @@
-set(PROJ_NAME "dde-cooperation")
+﻿set(PROJ_NAME "dde-cooperation")
+set(PKG_NAME "dde-cooperation")
+
+# enable qt build support
+set(CMAKE_AUTOUIC ON)
+set(CMAKE_AUTOMOC ON)
+set(CMAKE_AUTORCC ON)
 
 configure_file(
     "../config.h.in"
@@ -14,8 +20,6 @@ FILE(GLOB CPP_SRC
     ${CMAKE_SOURCE_DIR}/src/base/*.cpp
 )
 
-include_directories(${CMAKE_SOURCE_DIR}/src)
-
 set(qt_required_components Core Gui Network Widgets)
 find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS ${qt_required_components})
 find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS ${qt_required_components})
@@ -23,43 +27,55 @@ if (CMAKE_SYSTEM MATCHES "Linux")
     find_package(Dtk COMPONENTS Widget REQUIRED)
 endif()
 
-qt5_add_resources(RESOURCE_FILES ${CMAKE_CURRENT_SOURCE_DIR}/resources.qrc)
-
+#如果是Windows平台，则生成rc文件，还有inno setup脚本文件
+set(VERSION_RC_PATH "")
+set(MANIFEST "")
 if (WIN32)
-    # 程序图标
-    set (SET_ICON "IDI_ICON1 ICON DISCARDABLE ${CMAKE_CURRENT_SOURCE_DIR}/res/win/${PROJ_NAME}.ico")
     # 文件描述信息
-    set (PRODUCT_INFO "Deepin cooperation client")
+    set (PRODUCT_INFO "Deepin cooperation")
     set (PRODUCT_NAME "deepin-cooperation")
     set (PRODUCT_ID "A3AE65FC-2431-49AE-9A9C-87D3DBC2B7A4")
-    configure_file(${CMAKE_CURRENT_SOURCE_DIR}/../version.rc.in ${CMAKE_CURRENT_BINARY_DIR}/version.rc)
-    set (RC_FILES ${CMAKE_CURRENT_BINARY_DIR}/version.rc)
 
+    set(VERSION_RC_PATH ${CMAKE_CURRENT_BINARY_DIR}/version_${PROJ_NAME}.rc)
+    configure_file(${CMAKE_CURRENT_SOURCE_DIR}/../version.rc.in ${VERSION_RC_PATH})
+
+    set(MANIFEST ${CMAKE_CURRENT_SOURCE_DIR}/../app.manifest)
+
+    # 从定位输出目录
+    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${DEPLOY_OUTPUT_DIRECTORY}/${PKG_NAME})
 
     # 安装包制作inno脚本
     configure_file(${CMAKE_SOURCE_DIR}/dist/inno/setup.iss.in ${CMAKE_BINARY_DIR}/${PROJ_NAME}-setup.iss)
-
-    # 从定位输出目录
-    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${DEPLOY_OUTPUT_DIRECTORY}/${PROJ_NAME})
 endif()
 
 if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
-    qt_add_executable(${PROJ_NAME} WIN32
+    qt_add_executable(${PROJ_NAME}
         MANUAL_FINALIZATION
         ${CPP_SRC}
-        ${RESOURCE_FILES}
-        ${RC_FILES}
+        ${VERSION_RC_PATH}
+        ${MANIFEST}
     )
 else()
-    add_executable(${PROJ_NAME} WIN32
+    add_executable(${PROJ_NAME}
         ${CPP_SRC}
-        ${RESOURCE_FILES}
-        ${RC_FILES}
+        ${VERSION_RC_PATH}
+        ${MANIFEST}
     )
 endif()
 
+target_include_directories(${PROJ_NAME} PUBLIC ${CMAKE_SOURCE_DIR}/src)
+target_include_directories(${PROJ_NAME} PUBLIC ${CMAKE_SOURCE_DIR}/src/lib/cooperation)
+
 if (WIN32)
-    add_link_options(${PROJ_NAME} PRIVATE -mwindows)
+    # add_link_options(${PROJ_NAME} PRIVATE -mwindows)
+    #设置属性
+    set_target_properties(${PROJ_NAME} PROPERTIES
+        MACOSX_BUNDLE_GUI_IDENTIFIER www.deepin.org
+        MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION}
+        MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
+        MACOSX_BUNDLE TRUE
+        WIN32_EXECUTABLE TRUE
+    )
 endif()
 
 target_link_libraries(${PROJ_NAME}
@@ -68,7 +84,7 @@ target_link_libraries(${PROJ_NAME}
   Qt${QT_VERSION_MAJOR}::Gui
   Qt${QT_VERSION_MAJOR}::Network
   Qt${QT_VERSION_MAJOR}::Widgets
-  deepin_cross::framework
+  cooperation-core
 )
 
 if (CMAKE_SYSTEM MATCHES "Linux")
@@ -86,17 +102,12 @@ add_custom_target(${PROJ_NAME}_qm_files DEPENDS ${QM_FILES})
 add_dependencies(${PROJ_NAME} ${PROJ_NAME}_qm_files)
 
 if (WIN32)
-    # main entry vbs
-    file(GLOB SETUPS ${CMAKE_CURRENT_SOURCE_DIR}/res/win/main.vbs)
-    file(COPY ${SETUPS} DESTINATION ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/)
-
-    #install(FILES... does not work
-    FILE(GLOB_RECURSE TRAN_FILES ${QM_FILES})
-    file(COPY ${TRAN_FILES} DESTINATION ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/translations)
-
-    # copy common share libs
-    file(GLOB DLLS ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/../*.dll)
-    file(COPY ${DLLS} DESTINATION ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/)
+    # 添加一个自定义构建步骤，在构建后立即拷贝翻译文件到目标目录
+    add_custom_command(TARGET ${PROJ_NAME} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${CMAKE_BUILD_TYPE}/translations
+        COMMAND ${CMAKE_COMMAND} -E copy ${QM_FILES} ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${CMAKE_BUILD_TYPE}/translations
+        COMMENT "Copying translation files to output directory"
+    )
 
     deployqt_qt_runtime(${PROJ_NAME} ${qt_required_components})
 else()

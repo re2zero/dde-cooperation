@@ -1,5 +1,4 @@
-﻿add_subdirectory(apps)
-add_subdirectory(framework)
-add_subdirectory(plugins)
+﻿# share libraries
+add_subdirectory(lib)
 
-add_subdirectory(protocol)
+add_subdirectory(apps)
