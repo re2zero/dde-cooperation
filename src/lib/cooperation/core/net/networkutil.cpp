@@ -409,7 +409,6 @@ void NetworkUtil::doSendFiles(const QStringList &fileList)
 QString NetworkUtil::deviceInfoStr()
 {
     auto infomap = CooperationUtil::deviceInfo();
-    infomap.insert("IPAddress", CooperationUtil::localIPAddress());
 
     // 将QVariantMap转换为QJsonDocument转换为QString
     QJsonDocument jsonDocument = QJsonDocument::fromVariant(infomap);

@@ -256,10 +256,9 @@ void DiscoverController::publish()
     if (deviceInfo.value(AppSettings::DiscoveryModeKey) == 1)
         return;
 
-    QString selfIP = CooperationUtil::localIPAddress();
+    QString selfIP = deviceInfo.value(AppSettings::IPAddress).toString();
     d->ipfilter = selfIP.lastIndexOf(".") != -1 ? selfIP.left(selfIP.lastIndexOf(".")) : "";
 
-    deviceInfo.insert(AppSettings::IPAddress, selfIP);
     qInfo() << "publish:-------" << deviceInfo;
     for (const auto &key : deviceInfo.keys())
         d->zeroConf.addServiceTxtRecord(key, deviceInfo.value(key).toString().toUtf8().toBase64());

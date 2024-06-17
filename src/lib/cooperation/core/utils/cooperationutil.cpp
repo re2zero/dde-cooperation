@@ -136,6 +136,8 @@ QVariantMap CooperationUtil::deviceInfo()
     value = deepin_cross::BaseUtils::osType();
     info.insert(AppSettings::OSType, value);
 
+    info.insert(AppSettings::IPAddress, localIPAddress());
+
     return info;
 }
 
