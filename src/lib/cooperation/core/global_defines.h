@@ -1,7 +1,7 @@
 ﻿#ifndef TYPE_DEFINES_H
 #define TYPE_DEFINES_H
 
-#ifdef _WIN32
+#if defined(_WIN32) || defined(_WIN64) || defined(__ANDROID__)
 #include <QMainWindow>
 #include <QApplication>
 #include <QDialog>

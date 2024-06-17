@@ -22,6 +22,9 @@
 
 #if (defined(unix) || defined(__unix) || defined(__unix__) || defined(__APPLE__)) && !defined(__CYGWIN__)
 #include <execinfo.h>
+#if defined(__ANDROID__)
+#include <unwind.h>
+#endif
 #if defined(LIBBFD_SUPPORT)
 #include <bfd.h>
 #endif
@@ -65,9 +68,13 @@ StackTrace::StackTrace(int skip)
 #if (defined(unix) || defined(__unix) || defined(__unix__) || defined(__APPLE__)) && !defined(__CYGWIN__)
     const int capacity = 1024;
     void* frames[capacity];
-
+#if defined(__ANDROID__)
+    // TODO: backtrace supported since android-33
+    int captured = capacity;
+#else
     // Capture the current stack trace
     int captured = backtrace(frames, capacity);
+#endif
     int index = skip + 1;
     int size = captured - index;
 

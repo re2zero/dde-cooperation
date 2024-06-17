@@ -5,10 +5,16 @@
 #ifndef LOGGER_H
 #define LOGGER_H
 
+#include "utility/singleton.h"
+#include <sstream>
+
+#if defined(__ANDROID__)
+#include <android/log.h>
+#define TAG "dde-copperation"
+#else
 #include "logging/config.h"
 #include "logging/logger.h"
-
-#include <sstream>
+#endif
 
 namespace deepin_cross {
 
@@ -48,7 +54,10 @@ private:
     void logout();
 
     static const char *_levels[];
+#if defined(__ANDROID__)
+#else
     CppLogging::Logger _logger;
+#endif
     std::ostringstream _buffer;
     int _lv;
 };

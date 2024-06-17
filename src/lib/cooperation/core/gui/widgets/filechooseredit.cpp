@@ -4,7 +4,7 @@
 
 #include "filechooseredit.h"
 
-#ifdef linux
+#if defined(__linux) &&  !defined(__ANDROID__)
 #    include <DStyle>
 #endif
 

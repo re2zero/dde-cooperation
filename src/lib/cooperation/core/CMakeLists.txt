@@ -76,15 +76,27 @@ elseif (CMAKE_SYSTEM MATCHES "Linux")
     )
     find_package(Dtk COMPONENTS Widget REQUIRED)
 else()
-    message (FATAL_ERROR "not support on ${CMAKE_SYSTEM} yet.")
+    if (ANDROID)
+        message ("Build for on ${CMAKE_SYSTEM}.")
+    else()
+        message (FATAL_ERROR "not support on ${CMAKE_SYSTEM} yet.")
+    endif()
 endif()
 
-find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Core Gui Network DBus Concurrent)
-find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Core Gui Widgets Network DBus Concurrent)
+find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Core Gui Network Concurrent)
+find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Core Gui Widgets Network Concurrent)
+# if (NOT ANDROID)
+# find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS DBus)
+# endif
 
-qt5_add_resources(RESOURCE_FILES ${CMAKE_CURRENT_SOURCE_DIR}/gui/resources/resources.qrc)
+qt_add_resources(RESOURCE_FILES ${CMAKE_CURRENT_SOURCE_DIR}/gui/resources/resources.qrc)
 
+if (ANDROID)
+list(APPEND LINKLIBS cppcommon)
+list(APPEND LINKLIBS log)
+else()
 list(APPEND LINKLIBS cpplogging)
+endif()
 list(APPEND LINKLIBS sessionmanager)
 
 add_library(${PROJECT_NAME}

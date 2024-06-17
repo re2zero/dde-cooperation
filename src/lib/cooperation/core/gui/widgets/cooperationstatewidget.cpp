@@ -7,7 +7,7 @@
 #include "global_defines.h"
 #include "gui/utils/cooperationguihelper.h"
 
-#ifdef linux
+#if defined(__linux) &&  !defined(__ANDROID__)
 #    include <DPalette>
 #endif
 #ifdef DTKWIDGET_CLASS_DSizeMode

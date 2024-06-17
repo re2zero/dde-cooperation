@@ -4,6 +4,9 @@ project(dde-cooperation VERSION 0.1 LANGUAGES CXX)
 
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 
+find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Core Network)
+find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Core Network)
+find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Gui)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -11,7 +14,9 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 if (NOT WIN32)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g -Wall -fPIE")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wl,--as-need")
+    if (NOT ANDROID)
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wl,--as-need")
+    endif()
 
     #安全加固
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror=return-type")
@@ -85,7 +90,7 @@ if(NOT CMAKE_BUILD_TYPE)
    message("Cmake build type is not defined!")
    set(CMAKE_BUILD_TYPE "Debug")
     # 设置环境变量
-   set(ENV{QT_SELECT} "5")
+#    set(ENV{QT_SELECT} "5")
 endif()
 
 # 引入翻译生成
@@ -93,6 +98,11 @@ include(translation-generate)
 
 # header-only libraries: jwt, picojson
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/include)
+
+# android uuid
+if (ANDROID)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/CppServer/modules)
+endif()
 
 # Modules
 add_subdirectory("modules")

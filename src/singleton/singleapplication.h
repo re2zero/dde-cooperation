@@ -5,7 +5,7 @@
 #ifndef SINGLEAPPLICATION_H
 #define SINGLEAPPLICATION_H
 
-#if defined(_WIN32) || defined(_WIN64)
+#if defined(_WIN32) || defined(_WIN64) || defined(__ANDROID__)
 #    include <QApplication>
 typedef QApplication CrossApplication;
 #else

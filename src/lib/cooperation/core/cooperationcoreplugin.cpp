@@ -14,7 +14,7 @@
 #include "configs/settings/configmanager.h"
 #include "singleton/singleapplication.h"
 
-#ifdef __linux__
+#if defined(__linux) &&  !defined(__ANDROID__)
 #    include "base/reportlog/reportlogmanager.h"
 #    include <DFeatureDisplayDialog>
 #    include <QFile>

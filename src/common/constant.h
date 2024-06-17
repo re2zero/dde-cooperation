@@ -59,14 +59,14 @@ typedef enum whoami_t {
     AppSendFile = 3,
 } Whoami;
 
-typedef enum device_os_t{
-    OTHER = 0,
-    UOS = 1,
-    LINUX = 2,
-    WINDOWS = 3,
-    MACOS = 4,
-    ANDROID = 5,
-} DeviceOS;
+//typedef enum device_os_t{
+//    OTHER = 0,
+//    UOS = 1,
+//    LINUX = 2,
+//    WINDOWS = 3,
+//    MACOS = 4,
+//    ANDROID = 5,
+//} DeviceOS;
 
 typedef enum compositor_t {
     CPST_NONE = 0,

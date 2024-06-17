@@ -14,7 +14,9 @@ Logger::Logger()
 
 Logger::~Logger()
 {
+#if !defined(__ANDROID__)
     CppLogging::Config::Shutdown();
+#endif
 }
 
 std::ostringstream& Logger::stream(const char* fname, unsigned line, int level)
@@ -32,6 +34,7 @@ std::ostringstream& Logger::stream(const char* fname, unsigned line, int level)
 }
 
 void Logger::init(const std::string &logpath, const std::string &logname) {
+#if !defined(__ANDROID__)
     CppCommon::Path savepath = CppCommon::Path(logpath);
     // Create a custom text layout pattern {LocalDate} {LocalTime}
     // std::string fileAndLine = std::string(__FILE__) + ":" + std::to_string(__LINE__);
@@ -64,10 +67,32 @@ void Logger::init(const std::string &logpath, const std::string &logname) {
 
     // last: get the configed logger
     _logger = CppLogging::Config::CreateLogger("dde-cooperation");
+#endif
 }
 
 void Logger::logout()
 {
+#if defined(__ANDROID__)
+    switch (_lv) {
+    case debug:
+        __android_log_print(ANDROID_LOG_DEBUG, TAG, "%s", _buffer.str().c_str());
+        break;
+    case info:
+        __android_log_print(ANDROID_LOG_INFO, TAG, "%s", _buffer.str().c_str());
+        break;
+    case warning:
+        __android_log_print(ANDROID_LOG_WARN, TAG, "%s", _buffer.str().c_str());
+        break;
+    case error:
+        __android_log_print(ANDROID_LOG_ERROR, TAG, "%s", _buffer.str().c_str());
+        break;
+    case fatal:
+        __android_log_print(ANDROID_LOG_FATAL, TAG, "%s", _buffer.str().c_str());
+        break;
+    default:
+        break;
+    }
+#else
     switch (_lv) {
     case debug:
         _logger.Debug(_buffer.str());
@@ -87,4 +112,5 @@ void Logger::logout()
     default:
         break;
     }
+#endif
 }

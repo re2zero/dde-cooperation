@@ -4,7 +4,7 @@
 
 #include "backgroundwidget.h"
 
-#ifdef linux
+#if defined(__linux) && !defined(__ANDROID__)
 #include <DGuiApplicationHelper>
 #endif
 
@@ -85,13 +85,13 @@ QColor BackgroundWidget::backgroundColor()
     switch (colorType) {
     case ItemBackground:
         color.setRgb(0, 0, 0, static_cast<int>(255 * 0.05));
-#ifdef linux
+#if defined(__linux) &&  !defined(__ANDROID__)
         if (DTK_GUI_NAMESPACE::DGuiApplicationHelper::instance()->themeType() == DTK_GUI_NAMESPACE::DGuiApplicationHelper::DarkType)
             color.setRgb(255, 255, 255, static_cast<int>(255 * 0.05));
 #endif
         break;
     default:
-#ifdef linux
+#if defined(__linux) &&  !defined(__ANDROID__)
         if (DTK_GUI_NAMESPACE::DGuiApplicationHelper::instance()->themeType() == DTK_GUI_NAMESPACE::DGuiApplicationHelper::DarkType)
             color.setRgb(255, 255, 255, static_cast<int>(255 * 0.03));
 #endif

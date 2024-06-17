@@ -10,7 +10,7 @@
 
 #include "net/cooconstrants.h"
 
-#ifdef linux
+#if defined(__linux) &&  !defined(__ANDROID__)
 #    include <QDBusInterface>
 #    include <net/linux/noticeutil.h>
 #endif

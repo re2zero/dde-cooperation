@@ -403,7 +403,7 @@ QStringList Settings::keyList(const QString &group) const
         }
     }
 
-    keyList << keys.toList();
+    keyList = QList<QString>(keys.begin(), keys.end());
 
     return keyList;
 }

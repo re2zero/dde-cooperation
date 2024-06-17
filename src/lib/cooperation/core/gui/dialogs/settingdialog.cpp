@@ -9,7 +9,7 @@
 #include "configs/settings/configmanager.h"
 #include "configs/dconfig/dconfigmanager.h"
 
-#ifdef linux
+#if defined(__linux) &&  !defined(__ANDROID__)
 #    include <DPalette>
 #endif
 

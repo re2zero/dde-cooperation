@@ -71,7 +71,7 @@ void CommonUitls::loadTranslator()
     auto locale = QLocale::system();
     QStringList missingQmfiles;
     QStringList translateFilenames { QString("%1_%2").arg(qApp->applicationName()).arg(QLocale::system().name()) };
-    const QStringList parseLocalNameList = locale.name().split("_", QString::SkipEmptyParts);
+    const QStringList parseLocalNameList = locale.name().split("_", Qt::SkipEmptyParts);
     if (parseLocalNameList.length() > 0)
         translateFilenames << QString("%1_%2").arg(qApp->applicationName()).arg(parseLocalNameList.at(0));
 

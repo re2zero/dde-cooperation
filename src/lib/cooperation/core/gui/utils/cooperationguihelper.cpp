@@ -5,7 +5,7 @@
 #include "cooperationguihelper.h"
 #include "global_defines.h"
 
-#ifdef linux
+#if defined(__linux) &&  !defined(__ANDROID__)
 #    include <DGuiApplicationHelper>
 #    include <DFontSizeManager>
 DGUI_USE_NAMESPACE
