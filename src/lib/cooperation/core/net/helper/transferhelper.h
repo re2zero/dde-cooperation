@@ -36,6 +36,9 @@ public:
     static bool buttonVisible(const QString &id, const DeviceInfoPointer info);
     static bool buttonClickable(const QString &id, const DeviceInfoPointer info);
 
+signals:
+    void deliverMessage(const QString &app, const QStringList &msg);
+
 public Q_SLOTS:
     //common
     void transferResult(bool result, const QString &msg);

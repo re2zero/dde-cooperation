@@ -10,6 +10,7 @@
 #include "manager/sessionproto.h"
 #include "common/log.h"
 #include "common/constant.h"
+#include "common/commonutils.h"
 
 #include "helper/transferhepler.h"
 
@@ -25,9 +26,6 @@
 NetworkUtilPrivate::NetworkUtilPrivate(NetworkUtil *qq)
     : q(qq)
 {
-    bool onlyTransfer = qApp->property("onlyTransfer").toBool();
-    LOG << "This is only transfer?" << onlyTransfer;
-
     ExtenMessageHandler msg_cb([this](int32_t mask, const picojson::value &json_value, std::string *res_msg) -> bool {
         DLOG << "NetworkUtil >> " << mask << " msg_cb, json_msg: " << json_value << std::endl;
         switch (mask) {
@@ -222,5 +220,6 @@ void NetworkUtil::doSendFiles(const QStringList &fileList)
         WLOG << "No confirm address!!!";
         return;
     }
-    d->sessionManager->sendFiles(d->confirmTargetAddress, DATA_WEB_PORT, fileList);
+    int ranport = deepin_cross::CommonUitls::getAvailablePort();
+    d->sessionManager->sendFiles(d->confirmTargetAddress, ranport, fileList);
 }

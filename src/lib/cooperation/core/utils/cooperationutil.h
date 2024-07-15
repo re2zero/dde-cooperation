@@ -14,17 +14,16 @@
 namespace cooperation_core {
 
 class CooperationUtilPrivate;
+class MainWindow;
 class CooperationUtil : public QObject
 {
     Q_OBJECT
 public:
     static CooperationUtil *instance();
 
-    QWidget *mainWindow();
+    void mainWindow(QSharedPointer<MainWindow> window);
 
-    DeviceInfoPointer findDeviceInfo(const QString &ip);
-
-    void destroyMainWindow();
+    void activateWindow();
 
     void registerDeviceOperation(const QVariantMap &map);
 
@@ -36,12 +35,10 @@ public:
 
     void initHistory();
 
-    void showCloseDialog();
-
-    void minimizedAPP();
-
     static QVariantMap deviceInfo();
     static QString localIPAddress();
+    static QString closeOption();
+    static void saveOption(bool exit);
 
 Q_SIGNALS:
     void onlineStateChanged(const QString &validIP);

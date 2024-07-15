@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-#include "singleapplication.h"
+#include "singleton/singleapplication.h"
 #include "base/baseutils.h"
 #include "config.h"
 #include "core/datatransfercoreplugin.h"
@@ -20,8 +20,6 @@ int main(int argc, char *argv[])
 #endif
 
     deepin_cross::SingleApplication app(argc, argv);
-    app.setOrganizationName("deepin");
-    app.setAttribute(Qt::AA_UseHighDpiPixmaps);
 
 #ifdef linux
     app.loadTranslator();

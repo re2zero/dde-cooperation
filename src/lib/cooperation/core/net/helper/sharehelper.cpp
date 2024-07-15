@@ -100,7 +100,7 @@ void ShareHelperPrivate::notifyMessage(const QString &body, const QStringList &a
     Q_UNUSED(actions)
     Q_UNUSED(expireTimeout)
 
-    CooperationUtil::instance()->mainWindow()->activateWindow();
+    CooperationUtil::instance()->activateWindow();
     taskDialog()->switchInfomationPage(tr("Cooperation"), body);
     taskDialog()->show();
 #endif
@@ -322,7 +322,7 @@ void ShareHelper::notifyConnectRequest(const QString &info)
 #ifdef linux
     d->notifyMessage(body.arg(CommonUitls::elidedText(d->targetDevName, Qt::ElideMiddle, 15)), actions, 10 * 1000);
 #else
-    CooperationUtil::instance()->mainWindow()->activateWindow();
+    CooperationUtil::instance()->activateWindow();
     d->taskDialog()->switchConfirmPage(tr("Cooperation"), body.arg(CommonUitls::elidedText(d->targetDevName, Qt::ElideMiddle, 15)));
     d->taskDialog()->show();
 #endif

@@ -199,7 +199,16 @@ void TransferHelper::buttonClicked(const QString &id, const DeviceInfoPointer in
         if (selectedFiles.isEmpty())
             return;
 
-        TransferHelper::instance()->sendFiles(ip, name, selectedFiles);
+        if (qApp->property("onlyTransfer").toBool()) {
+            // send command to local socket.
+            QStringList msgs;
+            // must be in the format of: <ip> <name> <files>
+            msgs << "-f" << ip << name << selectedFiles;
+            emit TransferHelper::instance()->deliverMessage(MainAppName, msgs);
+            qApp->exit(0);
+        } else {
+            TransferHelper::instance()->sendFiles(ip, name, selectedFiles);
+        }
     } else if (id == HistoryButtonId) {
         if (!transHistory->contains(ip))
             return;

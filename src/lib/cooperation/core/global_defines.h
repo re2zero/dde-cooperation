@@ -1,7 +1,7 @@
 ﻿#ifndef TYPE_DEFINES_H
 #define TYPE_DEFINES_H
 
-#ifdef _WIN32
+#if defined(_WIN32) || defined(_WIN64)
 #include <QMainWindow>
 #include <QApplication>
 #include <QDialog>
@@ -123,7 +123,6 @@ inline constexpr char ConnectionInfo[] { "ConnectionInfo" };
 }
 
 inline const char MainAppName[] { "dde-cooperation" };
-inline const char CooperRegisterName[] { "daemon-cooperation" };
 
 // Setting menu action list
 enum MenuAction {

@@ -7,11 +7,11 @@
 
 #include "global_defines.h"
 #include "discover/deviceinfo.h"
+#include "gui/mainwindow.h"
 
 #include <QObject>
 
 class SessionManager;
-class QSystemTrayIcon;
 namespace cooperation_core {
 
 class MainWindow;
@@ -25,8 +25,7 @@ public:
 
 public:
     CooperationUtil *q { nullptr };
-    MainWindow *window { nullptr };
-    QSystemTrayIcon *trayIcon { nullptr };
+    QSharedPointer<MainWindow> window { nullptr };
     bool isOnline { true };
 };
 

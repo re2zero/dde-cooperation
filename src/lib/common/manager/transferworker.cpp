@@ -125,7 +125,11 @@ bool TransferWorker::tryStartSend(QStringList paths, int port, std::vector<std::
         QFileInfo fileInfo(path);
         std::string name = fileInfo.fileName().toStdString();
         nameVector->push_back(name);
-        _file_server->webBind(name, path.toStdString());
+        try {
+            _file_server->webBind(name, path.toStdString());
+        } catch (...) {
+            WLOG << "web bind (" << name << ") throw exception.";
+        }
 
         jsonArray.push_back(picojson::value(name));
 

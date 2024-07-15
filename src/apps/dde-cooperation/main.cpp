@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "singleton/singleapplication.h"
+#include "singleton/commandparser.h"
 #include "base/baseutils.h"
 #include "config.h"
 
@@ -40,8 +41,6 @@ int main(int argc, char *argv[])
 #endif
 
     deepin_cross::SingleApplication app(argc, argv);
-    app.setOrganizationName("deepin");
-    app.setAttribute(Qt::AA_UseHighDpiPixmaps);
 
 #ifdef linux
     app.loadTranslator();
@@ -73,6 +72,14 @@ int main(int argc, char *argv[])
 
     CooperaionCorePlugin *core =  new CooperaionCorePlugin();
     core->start();
+
+    QObject::connect(&app, &deepin_cross::SingleApplication::onArrivedCommands, [&] (const QStringList &args) {
+        CommandParser::instance().process(args);
+        auto forward = CommandParser::instance().processCommand("f");
+        if (!forward.isEmpty()) {
+            core->handleForwardCommand(forward);
+        }
+    });
 
     // 安全退出
 #ifndef _WIN32

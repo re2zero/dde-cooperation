@@ -10,10 +10,13 @@
 #include "net/helper/sharehelper.h"
 #include "discover/deviceinfo.h"
 
+
 #include "common/commonutils.h"
 #include "configs/settings/configmanager.h"
 #include "singleton/singleapplication.h"
 
+#include <QCommandLineParser>
+#include <QCommandLineOption>
 #ifdef __linux__
 #    include "base/reportlog/reportlogmanager.h"
 #    include <DFeatureDisplayDialog>
@@ -36,13 +39,14 @@ CooperaionCorePlugin::~CooperaionCorePlugin()
 
 void CooperaionCorePlugin::initialize()
 {
-    if (qApp->property("onlyTransfer").toBool()) {
+    dMain = QSharedPointer<MainWindow>::create();
+
+    onlyTransfer = qApp->property("onlyTransfer").toBool();
+    if (onlyTransfer) {
         auto appName = qApp->applicationName();
         qApp->setApplicationName(MainAppName);
         ConfigManager::instance();
         qApp->setApplicationName(appName);
-    } else {
-        connect(qApp, &SingleApplication::raiseWindow, this, [] { CooperationUtil::instance()->mainWindow()->activateWindow(); });
     }
 
 #ifdef linux
@@ -55,23 +59,51 @@ void CooperaionCorePlugin::initialize()
     CommonUitls::loadTranslator();
 }
 
+bool CooperaionCorePlugin::isMinilize()
+{
+    QCommandLineParser parser;
+    // 添加自定义选项和参数"-m"
+    QCommandLineOption option("m", "Launch with minimize UI");
+    parser.addOption(option);
+
+    // 解析命令行参数
+    const auto &args = qApp->arguments();
+    if (args.size() != 2 || !args.contains("-m"))
+        return false;
+
+    parser.process(args);
+    return parser.isSet(option);;
+}
+
 bool CooperaionCorePlugin::start()
 {
-    CooperationUtil::instance()->mainWindow()->show();
+    CooperationUtil::instance()->mainWindow(dMain);
     DiscoverController::instance();
-    NetworkUtil::instance();
-    TransferHelper::instance()->registBtn();
-    ShareHelper::instance()->registConnectBtn();
+
     CooperationUtil::instance()->initNetworkListener();
     CooperationUtil::instance()->initHistory();
+    TransferHelper::instance()->registBtn();
+    if (onlyTransfer) {
+        // transfer deepend cooperation, not need network & share. bind the sendfile command.
+        connect(TransferHelper::instance(), &TransferHelper::deliverMessage, qApp, &SingleApplication::onDeliverMessage);
+    } else {
+        NetworkUtil::instance();
+        ShareHelper::instance()->registConnectBtn();
 
-    if (CommonUitls::isFirstStart() && !qApp->property("onlyTransfer").toBool()) {
-#ifdef linux
-        DFeatureDisplayDialog *dlg = qApp->featureDisplayDialog();
-        auto btn = dlg->getButton(0);
-        connect(btn, &QAbstractButton::clicked, qApp, &SingleApplication::helpActionTriggered);
-        CooperationUtil::instance()->showFeatureDisplayDialog(dlg);
+#ifdef __linux__
+        if (CommonUitls::isFirstStart()) {
+            DFeatureDisplayDialog *dlg = qApp->featureDisplayDialog();
+            auto btn = dlg->getButton(0);
+            connect(btn, &QAbstractButton::clicked, qApp, &SingleApplication::helpActionTriggered);
+            CooperationUtil::instance()->showFeatureDisplayDialog(dlg);
+        }
 #endif
+    }
+
+    if (isMinilize()) {
+        dMain->minimizedAPP();
+    } else {
+        dMain->show();
     }
 
     return true;
@@ -79,5 +111,17 @@ bool CooperaionCorePlugin::start()
 
 void CooperaionCorePlugin::stop()
 {
-    CooperationUtil::instance()->destroyMainWindow();
+}
+
+void CooperaionCorePlugin::handleForwardCommand(const QStringList &forward)
+{
+    if (forward.size() >= 3) {
+        auto ip = forward.at(0);
+        auto name = forward.at(1);
+        auto files = forward.mid(2);
+        qWarning() << "---------IP: " << ip;
+        qWarning() << "---------name: " << name;
+        qWarning() << "---------files: " << files;
+        TransferHelper::instance()->sendFiles(ip, name, files);
+    }
 }

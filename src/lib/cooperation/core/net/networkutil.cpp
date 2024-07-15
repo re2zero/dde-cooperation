@@ -7,6 +7,7 @@
 
 #include "manager/sessionmanager.h"
 #include "manager/sessionproto.h"
+#include "common/commonutils.h"
 
 #include "cooconstrants.h"
 #include "discover/discovercontroller.h"
@@ -24,6 +25,12 @@ NetworkUtilPrivate::NetworkUtilPrivate(NetworkUtil *qq)
 {
     bool onlyTransfer = qApp->property("onlyTransfer").toBool();
     LOG << "This is only transfer?" << onlyTransfer;
+
+    sessionManager = new SessionManager(this);
+    if (onlyTransfer) {
+        return;
+    }
+    servePort = COO_SESSION_PORT;
 
     ExtenMessageHandler msg_cb([this](int32_t mask, const picojson::value &json_value, std::string *res_msg) -> bool {
 #ifdef QT_DEBUG
@@ -129,11 +136,9 @@ NetworkUtilPrivate::NetworkUtilPrivate(NetworkUtil *qq)
         return false;
     });
 
-    sessionManager = new SessionManager(this);
     sessionManager->setSessionExtCallback(msg_cb);
     sessionManager->updatePin(COO_HARD_PIN);
-
-    sessionManager->sessionListen(COO_SESSION_PORT);
+    sessionManager->sessionListen(servePort);
 
     connect(sessionManager, &SessionManager::notifyConnection, this, &NetworkUtilPrivate::handleConnectStatus);
     connect(sessionManager, &SessionManager::notifyTransChanged, this, &NetworkUtilPrivate::handleTransChanged);
@@ -258,7 +263,7 @@ void NetworkUtil::searchDevice(const QString &ip)
     DLOG << "searching " << ip.toStdString();
 
     // session connect and then send rpc request
-    bool logind = d->sessionManager->sessionConnect(ip, COO_SESSION_PORT, COO_HARD_PIN);
+    bool logind = d->sessionManager->sessionConnect(ip, d->servePort, COO_HARD_PIN);
     if (logind) {
         reqTargetInfo(ip);
     }
@@ -267,7 +272,7 @@ void NetworkUtil::searchDevice(const QString &ip)
 void NetworkUtil::pingTarget(const QString &ip)
 {
     // session connect by async, handle status in callback
-    d->sessionManager->sessionPing(ip, COO_SESSION_PORT);
+    d->sessionManager->sessionPing(ip, d->servePort);
 }
 
 void NetworkUtil::reqTargetInfo(const QString &ip)
@@ -285,7 +290,7 @@ void NetworkUtil::reqTargetInfo(const QString &ip)
 void NetworkUtil::sendTransApply(const QString &ip)
 {
     // session connect and then send rpc request
-    bool logind = d->sessionManager->sessionConnect(ip, COO_SESSION_PORT, COO_HARD_PIN);
+    bool logind = d->sessionManager->sessionConnect(ip, d->servePort, COO_HARD_PIN);
 
     metaObject()->invokeMethod(TransferHelper::instance(), "onConnectStatusChanged",
                                Qt::QueuedConnection,
@@ -311,7 +316,7 @@ void NetworkUtil::sendTransApply(const QString &ip)
 
 void NetworkUtil::sendShareEvents(const QString &ip, const QString &selfprint)
 {
-    bool logind = d->sessionManager->sessionConnect(ip, COO_SESSION_PORT, COO_HARD_PIN);
+    bool logind = d->sessionManager->sessionConnect(ip, d->servePort, COO_HARD_PIN);
     if (!logind) {
         WLOG << "fail to login: " << ip.toStdString() << " pls try again.";
         metaObject()->invokeMethod(ShareHelper::instance(),
@@ -337,7 +342,7 @@ void NetworkUtil::sendShareEvents(const QString &ip, const QString &selfprint)
 
 void NetworkUtil::sendDisconnectShareEvents(const QString &ip)
 {
-    bool logind = d->sessionManager->sessionConnect(ip, COO_SESSION_PORT, COO_HARD_PIN);
+    bool logind = d->sessionManager->sessionConnect(ip, d->servePort, COO_HARD_PIN);
     if (!logind) {
         WLOG << "fail to login: " << ip.toStdString() << " pls try again.";
         return;
@@ -407,7 +412,8 @@ void NetworkUtil::doSendFiles(const QStringList &fileList)
         WLOG << "No confirm address!!!";
         return;
     }
-    d->sessionManager->sendFiles(d->confirmTargetAddress, COO_WEB_PORT, fileList);
+    int ranport = deepin_cross::CommonUitls::getAvailablePort();
+    d->sessionManager->sendFiles(d->confirmTargetAddress, ranport, fileList);
 }
 
 QString NetworkUtil::deviceInfoStr()

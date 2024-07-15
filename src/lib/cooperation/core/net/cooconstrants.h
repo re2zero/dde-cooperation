@@ -5,10 +5,9 @@
 #ifndef COO_CONSTRANTS_H
 #define COO_CONSTRANTS_H
 
-#define COO_SESSION_PORT 51566
+#define COO_SESSION_PORT 51597
+// #define TRANS_SESSION_PORT 51599
 #define COO_HARD_PIN "515616"
-
-#define COO_WEB_PORT 51568
 
 typedef enum apply_type_t {
     APPLY_INFO = 100,   // 设备信息申请

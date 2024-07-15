@@ -26,10 +26,13 @@ public:
     static QString tipConfPath();
 
     static QString generateRandomPassword();
+
+    static int getAvailablePort();
 private:
     static QString logDir();
     static bool detailLog();
     static bool isProcessRunning(const QString &processName);
+    static bool isPortInUse(int port);
 };
 }
 

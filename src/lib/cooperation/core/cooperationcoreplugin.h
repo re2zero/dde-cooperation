@@ -6,12 +6,14 @@
 #define COOPERATIONCOREPLUGIN_H
 
 #include "common/exportglobal.h"
+#include "gui/mainwindow.h"
 
 #include <QObject>
+#include <QSharedPointer>
 
 namespace cooperation_core {
 
-class MainWindow;
+
 class EXPORT_API CooperaionCorePlugin : public QObject
 {
     Q_OBJECT
@@ -23,8 +25,14 @@ public:
     bool start();
     void stop();
 
+public slots:
+    void handleForwardCommand(const QStringList &forward);
+
 private:
     void initialize();
+    bool isMinilize();
+    QSharedPointer<MainWindow> dMain { nullptr };
+    bool onlyTransfer { false };
 };
 
 }   // namespace cooperation_core
