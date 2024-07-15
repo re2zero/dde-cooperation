@@ -16,17 +16,13 @@ CommandParser &CommandParser::instance()
     return ins;
 }
 
-bool CommandParser::isSet(const QString &name) const
+QStringList CommandParser::processCommand(const QString &name)
 {
-    return commandParser->isSet(name);
-}
-
-void CommandParser::processCommand()
-{
-    if (isSet("s")) {
-        setSendFiles();
-        return;
+    QStringList args;
+    if (cmdParser->isSet(name)) {
+        args = cmdParser->positionalArguments();
     }
+    return args;
 }
 
 void CommandParser::process()
@@ -37,15 +33,15 @@ void CommandParser::process()
 void CommandParser::process(const QStringList &arguments)
 {
     qDebug() << "App start args: " << arguments;
-    commandParser->process(arguments);
+    cmdParser->process(arguments);
 }
 
 void CommandParser::initialize()
 {
-    commandParser->setApplicationDescription(QString("%1 helper").arg(QCoreApplication::applicationName()));
+    cmdParser->setApplicationDescription(QString("%1 helper").arg(QCoreApplication::applicationName()));
     initOptions();
-    commandParser->addHelpOption();
-    commandParser->addVersionOption();
+    cmdParser->addHelpOption();
+    cmdParser->addVersionOption();
 }
 
 void CommandParser::initOptions()
@@ -53,26 +49,30 @@ void CommandParser::initOptions()
     QCommandLineOption sendFiles(QStringList() << "s"
                                                << "send-files",
                                  "send files");
-    QCommandLineOption detail("d", "Enable detail log");
+    QCommandLineOption detail(QStringList() << "d"
+                                            << "detail",
+                              "Enable detail log");
+    QCommandLineOption minimize(QStringList() << "m"
+                                              << "minimize",
+                                "Launch with minimize UI");
+    QCommandLineOption forward(QStringList() << "f"
+                                            << "forward",
+                              "Forward files to target with IP and name");
 
     addOption(sendFiles);
     addOption(detail);
+    addOption(minimize);
+    addOption(forward);
 }
 
 void CommandParser::addOption(const QCommandLineOption &option)
 {
-    commandParser->addOption(option);
-}
-
-void CommandParser::setSendFiles()
-{
-    const auto &sendFiles = commandParser->positionalArguments();
-    qApp->setProperty("sendFiles", QVariant::fromValue(sendFiles));
+    cmdParser->addOption(option);
 }
 
 CommandParser::CommandParser(QObject *parent)
     : QObject(parent),
-      commandParser(new QCommandLineParser)
+      cmdParser(new QCommandLineParser)
 {
     initialize();
 }

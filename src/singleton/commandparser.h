@@ -21,8 +21,7 @@ class CommandParser : public QObject
 public:
     static CommandParser &instance();
 
-    bool isSet(const QString &name) const;
-    void processCommand();
+    QStringList processCommand(const QString &name);
     void process();
     void process(const QStringList &arguments);
 
@@ -31,14 +30,12 @@ private:
     void initOptions();
     void addOption(const QCommandLineOption &option);
 
-    void setSendFiles();
-
 private:
     explicit CommandParser(QObject *parent = nullptr);
     ~CommandParser();
 
 private:
-    QCommandLineParser *commandParser;
+    QCommandLineParser *cmdParser;
 };
 
 #endif   // COMMANDPARSER_H

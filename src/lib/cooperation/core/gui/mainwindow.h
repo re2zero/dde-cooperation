@@ -5,8 +5,8 @@
 #ifndef MAINWINDOW_H
 #define MAINWINDOW_H
 
-#include "global_defines.h"
-#include "discover/deviceinfo.h"
+#include "../global_defines.h"
+#include "../discover/deviceinfo.h"
 
 #include <QScopedPointer>
 
@@ -20,7 +20,7 @@ public:
     explicit MainWindow(QWidget *parent = nullptr);
     ~MainWindow();
 
-    DeviceInfoPointer findDeviceInfo(const QString &ip);
+    // DeviceInfoPointer findDeviceInfo(const QString &ip);
 
 #if defined(_WIN32) || defined(_WIN64)
     void paintEvent(QPaintEvent *event) override;
@@ -30,6 +30,8 @@ public:
 #endif
     void closeEvent(QCloseEvent *event) override;
 
+    void minimizedAPP();
+
 public Q_SLOTS:
     void setFirstTipVisible();
     void onlineStateChanged(const QString &validIP);
@@ -38,6 +40,9 @@ public Q_SLOTS:
     void addDevice(const QList<DeviceInfoPointer> &infoList);
     void removeDevice(const QString &ip);
     void onRegistOperations(const QVariantMap &map);
+
+protected:
+    void showCloseDialog();
 
 private:
     QScopedPointer<MainWindowPrivate> d;

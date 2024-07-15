@@ -385,6 +385,7 @@ void FileClient::downloadFolder(const std::string &foldername, const std::string
     // create a override folder
     if (refoldername.empty()) {
         CppCommon::Path path = CppCommon::Path(_savedir) / foldername;
+        path = path.canonical(); // remove all '.' and '..' properly
         createNotExistPath(path.string(), false);
     }
 
@@ -463,7 +464,7 @@ bool FileClient::createNotExistPath(const std::string &abspath, bool isfile)
             }
         } catch (const CppCommon::FileSystemException &ex) {
             // 捕获并处理异常
-            std::cout << "Create throw FS exception: " << ex.what() << std::endl;
+            std::cout << "Create throw FS exception: " << ex.message() << std::endl;
             return false;
         }
         return true;
@@ -487,6 +488,22 @@ bool FileClient::createNotExistPath(const std::string &abspath, bool isfile)
 std::string FileClient::createNextAvailableName(const std::string &name, bool isfile)
 {
     CppCommon::Path path = CppCommon::Path(_savedir) / name;
+    path = path.canonical(); // remove all '.' and '..' properly
+
+    // save file security check
+    if (isfile) {
+        try {
+            // Redirect to Download folder if save into Home
+            if (path.parent().IsEquivalent(path.home())) {
+                std::cout << "Save dir is user Home, forbid! " << path.string() << std::endl;
+                path = path.parent() / "Download" / path.filename();
+            }
+        } catch (const CppCommon::FileSystemException &ex) {
+            // 捕获并处理异常
+            std::cout << "IsEquivalent throw FS exception: " << ex.message()<< std::endl;
+        }
+    }
+
     auto abspath = path.string();
     if (createNotExistPath(abspath, isfile)) {
         return abspath;

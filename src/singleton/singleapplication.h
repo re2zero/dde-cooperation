@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2023 UnionTech Software Technology Co., Ltd.
+// SPDX-FileCopyrightText: 2021 - 2023 UnionTech Software Technology Co., Ltd.
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -15,6 +15,7 @@ typedef DTK_WIDGET_NAMESPACE::DApplication CrossApplication;
 
 QT_BEGIN_NAMESPACE
 class QLocalServer;
+class QLocalSocket;
 QT_END_NAMESPACE
 
 namespace deepin_cross {
@@ -29,20 +30,26 @@ class SingleApplication : public CrossApplication
     Q_OBJECT
 public:
     explicit SingleApplication(int &argc, char **argv, int = ApplicationFlags);
-    ~SingleApplication();
+    ~SingleApplication() override;
+
+signals:
+    void onArrivedCommands(const QStringList &args);
+
+public slots:
+    bool checkProcess(const QString &key);
     bool setSingleInstance(const QString &key);
+    void handleConnection();
+    void readData();
     void closeServer();
     void helpActionTriggered();
-
-Q_SIGNALS:
-    void raiseWindow();
+    void onDeliverMessage(const QString &app, const QStringList &msg);
 
 protected:
     void initConnect();
 
-protected Q_SLOTS:
-    void handleNewConnection();
-    QString userServerName(const QString &key);
+private:
+    static bool sendMessage(const QString &key, const QByteArray &message);
+    static QString userServerName(const QString &key);
 
 private:
     QLocalServer *localServer { nullptr };

@@ -14,6 +14,8 @@ configure_file(
 FILE(GLOB CPP_SRC
     *.h
     *.cpp
+    ${CMAKE_SOURCE_DIR}/src/singleton/*.h
+    ${CMAKE_SOURCE_DIR}/src/singleton/*.cpp
     ${CMAKE_SOURCE_DIR}/src/base/*.h
     ${CMAKE_SOURCE_DIR}/src/base/*.cpp
 )

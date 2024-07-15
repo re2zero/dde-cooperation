@@ -16,12 +16,17 @@
 #include <QTimer>
 #include <QProcess>
 #include <QRandomGenerator>
+#include <QTcpSocket>
 
 using namespace deepin_cross;
 
 static constexpr char kApp1[] { "dde-cooperation" };
 static constexpr char kApp2[] { "dde-cooperation-transfer" };
 static constexpr char kApp3[] { "deepin-data-transfer" };
+
+//random: 13628~23628
+#define WEB_MIN_PORT 13628
+#define WEB_MAX_PORT 23628
 
 std::string CommonUitls::getFirstIp()
 {
@@ -242,4 +247,28 @@ QString CommonUitls::generateRandomPassword()
         password.append(QString::number(digit));
     }
     return password;
+}
+
+// 获取一个未被占用的随机端口
+int CommonUitls::getAvailablePort()
+{
+    QRandomGenerator *generator = QRandomGenerator::global();
+    while (true) {
+        int port = generator->bounded(WEB_MIN_PORT, WEB_MAX_PORT);
+        if (!isPortInUse(port)) {
+            return port;
+        }
+    }
+}
+
+// 检查端口是否被占用
+bool CommonUitls::isPortInUse(int port)
+{
+    QTcpSocket socket;
+    socket.connectToHost("127.0.0.1", port);
+    if (socket.waitForConnected(500)) {
+        socket.disconnectFromHost();
+        return true;
+    }
+    return false;
 }

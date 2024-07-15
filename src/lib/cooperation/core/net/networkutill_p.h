@@ -38,6 +38,7 @@ private:
     QString confirmTargetAddress {};   // remote ip address
     QString storageRoot = {};   //storage dir config
     QString storageFolder = {};   //sub folder under storage dir config
+    int servePort;
 };
 
 }
