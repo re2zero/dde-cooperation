@@ -103,19 +103,31 @@ void TransferHelper::handleMessage(QString jsonmsg)
 
     if (jsonObj.contains("add_result")) {
         QString result = jsonObj.value("add_result").toString();
-        LOG << "add_result" << result.data();
+        LOG << "add_result: " << result.toStdString();
         for (QString str : result.split(";")) {
-            auto res = str.split("/");
-            if (res.size() != 3)
-                continue;
-            emit TransferHelper::instance()->addResult(res.at(0), res.at(1) == "true", res.at(2));
+            // 以 "/true|false/" 或旧协议 " true|false " 分隔
+            QRegularExpression re("(/|\\s)(true|false)(/|\\s)");
+            QRegularExpressionMatch match = re.match(str);
+
+            if (match.hasMatch()) {
+                QString status = match.captured(2);
+                int statusStartIndex = match.capturedStart(2) - 1; // end with ' ' or '/'
+                int statusEndIndex = match.capturedEnd(2) + 1; // start with ' ' or '/'
+
+                QString fileName = str.left(statusStartIndex).trimmed();
+                QString migrationStatus = str.mid(statusEndIndex).trimmed();
+
+                emit TransferHelper::instance()->addResult(fileName, status == "true", migrationStatus);
+            } else {
+                WLOG << "error format:" << str.toStdString();
+            }
         }
         emit TransferHelper::instance()->transferFinished();
     }
 
     if (jsonObj.contains("change_page")) {
         QString result = jsonObj.value("change_page").toString();
-        LOG << "change_page" << result.data();
+        LOG << "change_page" << result.toStdString();
         if (!result.endsWith("_cb"))
             TransferHelper::instance()->sendMessage("change_page", result + "_cb");
         if (result.startsWith("startTransfer")) {
