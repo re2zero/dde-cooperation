@@ -574,11 +574,48 @@ DEF_test(co) {
             fastring x;
             ch >> x;
             EXPECT_EQ(x, "hello");
-            EXPECT_NE(x.data(), ps);
+            EXPECT(x.data() != ps);
 
             ch >> x;
             EXPECT_EQ(x, "again");
-            EXPECT_EQ(x.data(), pt);
+            EXPECT(x.data() == pt);
+
+            ch << s << s << s << s;
+            EXPECT(ch.done());
+
+            ch << s;
+            EXPECT(!ch.done());
+
+            ch.close();
+            EXPECT(!ch);
+
+            int i = 0;
+            do {
+                ch >> x;
+                if (ch.done()) ++i;
+            } while (ch.done());
+            EXPECT_EQ(i, 4);
+            EXPECT_EQ(x, "hello");
+        }
+
+        {
+            std::string s("hello");
+            std::string t("again");
+
+            co::chan<std::string> ch(4, 8);
+            ch << s;
+            ch << std::move(t);
+            EXPECT(ch);
+            EXPECT(ch.done());
+
+            EXPECT_EQ(s, "hello");
+
+            std::string x;
+            ch >> x;
+            EXPECT_EQ(x, "hello");
+
+            ch >> x;
+            EXPECT_EQ(x, "again");
 
             ch << s << s << s << s;
             EXPECT(ch.done());

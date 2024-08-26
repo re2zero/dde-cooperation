@@ -6,12 +6,23 @@
 #include <assert.h>
 #include <cstddef>
 #include <stdlib.h>
+#include <mutex>
 #include <new>
 #include <utility>
 #include <type_traits>
 #include <functional>
 
 namespace co {
+namespace xx {
+
+struct __coapi Initializer {
+    Initializer();
+    ~Initializer();
+};
+
+static Initializer g_initializer;
+
+} // xx
 
 constexpr size_t cache_line_size = L1_CACHE_LINE_SIZE;
 
@@ -32,6 +43,11 @@ __coapi void free(void* p, size_t size);
 //   - if p is NULL, it is equal to co::alloc(new_size)
 //   - @new_size must be greater than @old_size
 __coapi void* realloc(void* p, size_t old_size, size_t new_size);
+
+// Like realloc, but will not create a new allocation if there is not 
+// enough room to enlarge the memory allocation pointed to by p.
+// The return value is p or NULL.
+__coapi void* try_realloc(void* p, size_t old_size, size_t new_size);
 
 __coapi char* strdup(const char* s);
 

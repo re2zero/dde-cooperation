@@ -3,7 +3,6 @@
 #include "co/clist.h"
 #include "co/god.h"
 #include "co/log.h"
-#include <mutex>
 
 #ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
@@ -72,10 +71,11 @@ inline uint32 _pow2_align(uint32 n) {
 #include <sys/mman.h>
 
 inline void* _vm_reserve(size_t n) {
-    return ::mmap(
+    void* const p = ::mmap(
         NULL, n, PROT_READ | PROT_WRITE,
         MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0
     );
+    return p != MAP_FAILED ? p : NULL;
 }
 
 inline void _vm_commit(void* p, size_t n) {
@@ -249,9 +249,6 @@ class Root {
     Dealloc _da;     // used to destruct GlobalAlloc and ThreadAlloc
     Dealloc _dx[4];  // 0: _rootic, 1: _static, 2: rootic, 3: static 
 };
-
-Root& root() { static Root r; return r; }
-
 
 #if __arch64
 static const uint32 B = 6;
@@ -601,7 +598,7 @@ class GlobalAlloc {
     GlobalAlloc() = default;
     ~GlobalAlloc();
 
-    struct alignas(64) X {
+    struct alignas(co::cache_line_size) X {
         X() : mtx(), hb(0) {}
         std::mutex mtx;
         union {
@@ -631,12 +628,13 @@ GlobalAlloc::~GlobalAlloc() {
     }
 }
 
+static uint32 g_talloc_id = (uint32)-1;
+
 class alignas(co::cache_line_size) ThreadAlloc {
   public:
     ThreadAlloc(GlobalAlloc* ga)
         : _lb(0), _la(0), _sa(0), _ga(ga), _s(16 * 1024) {
-        static uint32 g_alloc_id = (uint32)-1;
-        _id = atomic_inc(&g_alloc_id, mo_relaxed);
+        _id = atomic_inc(&g_talloc_id, mo_relaxed);
     }
     ~ThreadAlloc() = default;
 
@@ -645,6 +643,7 @@ class alignas(co::cache_line_size) ThreadAlloc {
     void* alloc(size_t n, size_t align);
     void free(void* p, size_t n);
     void* realloc(void* p, size_t o, size_t n);
+    void* try_realloc(void* p, size_t o, size_t n);
     void* salloc(size_t n) { return _s.alloc(n); }
 
   private:
@@ -657,19 +656,25 @@ class alignas(co::cache_line_size) ThreadAlloc {
 };
 
 
-inline GlobalAlloc* galloc() {
-    static GlobalAlloc* ga = root().make<GlobalAlloc>();
-    return ga;
+struct alignas(co::cache_line_size) { char _[sizeof(Root)]; } g_root_buf;
+Root& g_root = *(Root*)&g_root_buf;
+static GlobalAlloc* g_ga;
+__thread ThreadAlloc* g_ta;
+static int g_nifty_counter;
+
+Initializer::Initializer() {
+    if (g_nifty_counter++ == 0) {
+        new (&g_root) Root();
+        g_ga = g_root.make<GlobalAlloc>();
+    }
 }
 
-inline ThreadAlloc* make_thread_alloc() {
-    auto g = galloc();
-    return root().make<ThreadAlloc>(g);
+Initializer::~Initializer() {
+    if (--g_nifty_counter == 0) g_root.~Root();
 }
 
 inline ThreadAlloc* talloc() {
-    static __thread ThreadAlloc* ta = 0;
-    return ta ? ta : (ta = make_thread_alloc());
+    return g_ta ? g_ta : (g_ta = g_root.make<ThreadAlloc>(g_ga));
 }
 
 #define _try_alloc(l, n, k) \
@@ -930,6 +935,34 @@ inline void* ThreadAlloc::realloc(void* p, size_t o, size_t n) {
     return x;
 }
 
+inline void* ThreadAlloc::try_realloc(void* p, size_t o, size_t n) {
+    if (unlikely(!p || o > g_max_alloc_size)) return NULL;
+    CHECK_LT(o, n) << "realloc error, new size must be greater than old size..";
+
+    if (o <= 2048) {
+        const uint32 k = (o > 16 ? god::align_up<16>((uint32)o) : 16);
+        if (n <= (size_t)k) return p;
+
+        const auto sa = (SmallAlloc*) god::align_down<1u << g_sb_bits>(p);
+        if (sa == _sa && n <= 2048) {
+            const uint32 l = god::nb<16>((uint32)n);
+            return sa->realloc(p, k >> 4, l);
+        }
+
+    } else {
+        const uint32 k = god::align_up<4096>((uint32)o);
+        if (n <= (size_t)k) return p;
+
+        const auto la = (LargeAlloc*) god::align_down<1u << g_lb_bits>(p);
+        if (la == _la && n <= g_max_alloc_size) {
+            const uint32 l = god::nb<4096>((uint32)n);
+            return la->realloc(p, k >> 12, l);
+        }
+    }
+
+    return NULL;
+}
+
 } // xx
 
 void* _salloc(size_t n) {
@@ -938,7 +971,7 @@ void* _salloc(size_t n) {
 }
 
 void _dealloc(std::function<void()>&& f, int x) {
-    xx::root().add_destructor(std::forward<xx::F>(f), x);
+    xx::g_root.add_destructor(std::forward<xx::F>(f), x);
 }
 
 #ifndef CO_USE_SYS_MALLOC
@@ -958,11 +991,16 @@ void* realloc(void* p, size_t o, size_t n) {
     return xx::talloc()->realloc(p, o, n);
 }
 
+void* try_realloc(void* p, size_t o, size_t n) {
+    return xx::talloc()->try_realloc(p, o, n);
+}
+
 #else
 void* alloc(size_t n) { return ::malloc(n); }
 void* alloc(size_t n, size_t) { return ::malloc(n); }
 void free(void* p, size_t) { ::free(p); }
 void* realloc(void* p, size_t, size_t n) { return ::realloc(p, n); }
+void* try_realloc(void*, size_t, size_t) { return NULL; }
 #endif
 
 void* zalloc(size_t size) {

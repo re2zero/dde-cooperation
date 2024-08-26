@@ -34,22 +34,19 @@ class __coapi fastring : public fast::stream {
         : fast::stream(cap) {
     }
 
-    // @p: memory allocated by co::alloc()
-    fastring(char* p, size_t cap, size_t size) noexcept
-        : fast::stream(p, cap, size) {
-    }
-
     ~fastring() = default;
 
     fastring(size_t n, char c)
-        : fast::stream(n, n) {
+        : fast::stream(n + 1, n) {
         memset(_p, c, n);
     }
 
-    fastring(char c, size_t n) : fastring(n, c) {}
+    fastring(char* p, size_t cap, size_t size)
+        : fast::stream(p, cap, size) {
+    }
 
     fastring(const void* s, size_t n)
-        : fast::stream(n, n) {
+        : fast::stream(n + !!n, n) {
         memcpy(_p, s, n);
     }
 
@@ -93,6 +90,13 @@ class __coapi fastring : public fast::stream {
         return *this;
     }
 
+    fastring& assign(size_t n, char c) {
+        this->reserve(n + 1);
+        memset(_p, c, n);
+        _size = n;
+        return *this;
+    }
+
     template<typename S>
     fastring& assign(S&& s) {
         return this->operator=(std::forward<S>(s));
@@ -118,7 +122,7 @@ class __coapi fastring : public fast::stream {
 
     fastring& append(const fastring& s) {
         if (&s != this) return this->append_nomchk(s.data(), s.size());
-        this->reserve(_size << 1);
+        this->reserve((_size << 1) + !!_size);
         memcpy(_p + _size, _p, _size); // append itself
         _size <<= 1;
         return *this;
@@ -130,10 +134,6 @@ class __coapi fastring : public fast::stream {
 
     fastring& append(size_t n, char c) {
         return (fastring&) fast::stream::append(n, c);
-    }
-
-    fastring& append(char c, size_t n) {
-        return this->append(n, c);
     }
 
     fastring& append(char c) {
@@ -693,7 +693,7 @@ class __coapi fastring : public fast::stream {
     fastring& _assign(const void* s, size_t n) {
         _size = n;
         if (n > 0) {
-            this->reserve(n);
+            this->reserve(n + 1);
             memcpy(_p, s, n);
         }
         return *this;

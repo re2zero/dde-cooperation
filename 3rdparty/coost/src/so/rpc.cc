@@ -508,9 +508,9 @@ void ClientImpl::call(const json::Json &req, json::Json &res)
     do {
         _fs.resize(sizeof(Header));
         req.str(_fs);
-        set_header((void *)_fs.c_str(), (uint32)(_fs.size() - sizeof(Header)));
+        set_header((void*)_fs.data(), (uint32)(_fs.size() - sizeof(Header)));
 
-        r = _tcp_cli.send(_fs.c_str(), (int)_fs.size(), FLG_rpc_send_timeout);
+        r = _tcp_cli.send(_fs.data(), (int)_fs.size(), FLG_rpc_send_timeout);
         if (unlikely(r <= 0)) goto send_err;
 
         RPCLOG << "rpc send req: " << req;
