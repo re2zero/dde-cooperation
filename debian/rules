@@ -14,6 +14,7 @@ endef
 # 调用检测Qt版本的命令
 $(eval $(call detect_qt_version))
 
+export QT_SELECT=qt5
 DEB_BUILD_ARCH ?= $(shell dpkg-architecture -qDEB_BUILD_ARCH)
 
 %:

@@ -96,7 +96,7 @@ endif()
 option(ENABLE_CUTEIPC "Enable CuteIPC for compatible with old daemon" ON)
 
 # Find Qt version
-find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Core)
+find_package(QT NAMES Qt5 REQUIRED COMPONENTS Core)
 # 检查并设置环境变量
 if(NOT DEFINED ENV{QT_SELECT})
     set(ENV{QT_SELECT} "qt${QT_VERSION_MAJOR}")
