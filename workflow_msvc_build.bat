@@ -1,19 +1,14 @@
 @echo off
 
-if "%~1"=="" (
-    echo 未提供 APP_VERSION，请设置 deiban/changelog 中的版本号。
-    exit /B 1
-) else (
-    set APP_VERSION=%~1
-    echo 使用提供的 APP_VERSION: %APP_VERSION%
-)
 
 REM Force use of the same compiler as used to build ChimeraX
 @REM call "%VS170COMNTOOLS%"\vcvars64.bat
 
-set VCINSTALLDIR=C:\Program Files\Microsoft Visual Studio\2022\Community\VC
+@REM windows-2019 has installed this vs2019
+@REM call "C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" %vc_arch%
+set VCINSTALLDIR=C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\VC
 echo VCINSTALLDIR: %VCINSTALLDIR%
-call "%VCINSTALLDIR%\Auxiliary\Build\vcvars64.bat"
+call "%VCINSTALLDIR%\Auxiliary\Build\vcvarsall.bat" %vc_arch%
 
 @REM projects
 set COO_PROJECT=dde-cooperation
@@ -42,7 +37,7 @@ if "%VisualStudioVersion%"=="15.0" (
     echo Visual Studio version was not detected: %VisualStudioVersion%
     echo Did you forget to run inside a VS developer prompt?
     echo Using the default cmake generator.
-    set cmake_gen=Visual Studio 17 2022
+    set cmake_gen=Visual Studio 16 2019
 )
 
 if exist build_env.bat call build_env.bat
@@ -60,7 +55,7 @@ mkdir installer-inno
 
 echo ------------starting cmake------------
 
-cmake -G "%cmake_gen%" -A x64 -D CMAKE_BUILD_TYPE=%B_BUILD_TYPE% -D CMAKE_PREFIX_PATH="%B_QT_FULLPATH%" -D QT_VERSION=%B_QT_VER% -D APP_VERSION=%APP_VERSION% ..
+cmake -G "%cmake_gen%" -A %vc_arch% -D CMAKE_BUILD_TYPE=%B_BUILD_TYPE% -D CMAKE_PREFIX_PATH="%B_QT_FULLPATH%" -D QT_VERSION=%B_QT_VER% -D APP_VERSION="${{ github.ref_name }}" ..
 if ERRORLEVEL 1 goto failed
 cmake --build . --config %B_BUILD_TYPE%
 if ERRORLEVEL 1 goto failed
