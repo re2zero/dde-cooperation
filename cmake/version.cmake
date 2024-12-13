@@ -1,8 +1,28 @@
-
-set (APP_VERSION_MAJOR 0)
-set (APP_VERSION_MINOR 8)
-set (APP_VERSION_PATCH 1)
 set (APP_VERSION_STAGE "release")
+
+if (NOT DEFINED APP_VERSION)
+    # 读取 debian/changelog 文件的第一行
+    file(READ ${CMAKE_SOURCE_DIR}/debian/changelog CHANGELOG_CONTENT)
+
+    # 将内容按行分割
+    string(REPLACE "\n" ";" CHANGELOG_LINES "${CHANGELOG_CONTENT}")
+
+    # 提取第一行
+    list(GET CHANGELOG_LINES 0 FIRST_LINE)
+    # 使用正则表达式提取版本号
+    if (FIRST_LINE MATCHES "([0-9]+\\.[0-9]+\\.[0-9]+)")
+        set(APP_VERSION "${CMAKE_MATCH_1}")
+        string(REPLACE "." ";" VERSION_PARTS "${APP_VERSION}")
+        list(GET VERSION_PARTS 0 APP_VERSION_MAJOR)
+        list(GET VERSION_PARTS 1 APP_VERSION_MINOR)
+        list(GET VERSION_PARTS 2 APP_VERSION_PATCH)
+    else()
+        message(STATUS "Cannot find version in changelog")
+        set (APP_VERSION_MAJOR 1)
+        set (APP_VERSION_MINOR 0)
+        set (APP_VERSION_PATCH 5)
+    endif()
+endif()
 
 #
 # Version
