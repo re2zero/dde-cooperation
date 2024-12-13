@@ -24,6 +24,11 @@ jobs:
       QT_VERSION: ${{ matrix.qt_version }}
       OPENSSL_ROOT_DIR: C:\Program Files\OpenSSL
     steps:
+      # force 6.2.2 version of Inno Setup
+      - name: Install Inno Setup
+        run: |
+          choco install innosetup --version 6.2.2 --allow-downgrade -y
+
       - name: '⚙️ Cache Qt'
         id: cache-qt
         uses: actions/cache@v3
@@ -51,7 +56,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          path: source
+          path: ''
           fetch-depth: 0
 
       - name: msvc-build
@@ -61,21 +66,12 @@ jobs:
           vc_arch: ${{ matrix.msvc_arch }}
           cmake_gen: Visual Studio 16 2019
         run: |
-          call "C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" %vc_arch%
-          mkdir build && cd build
-          cmake -G "%cmake_gen%" -A %vc_arch% -D CMAKE_BUILD_TYPE=%BUILD_TYPE% -D APP_VERSION="${{ github.ref_name }}" ../source/
-          cmake --build . --config %BUILD_TYPE%
-          cmake -G "%cmake_gen%" -A %vc_arch% -D CMAKE_BUILD_TYPE=%BUILD_TYPE% -D APP_VERSION="${{ github.ref_name }}" ../source/
+          call workflow_msvc_build.bat
 
-      - name: Inno Setup data-transfer
-        uses: nadeemjazmawe/inno-setup-action-cli@v6.0.5
-        with:
-          filepath: build/deepin-data-transfer-setup.iss
-
-      - name: Inno Setup cooperation
-        uses: nadeemjazmawe/inno-setup-action-cli@v6.0.5
-        with:
-          filepath: build/dde-cooperation-setup.iss
+      - name: Make Installer Directories
+        run: |
+          powershell -Command "Compress-Archive -Path build/installer-inno/dde-cooperation/* -DestinationPath build/installer-inno/dde-cooperation.zip"
+          powershell -Command "Compress-Archive -Path build/installer-inno/data-transfer/* -DestinationPath build/installer-inno/deepin-data-transfer.zip"
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
@@ -83,6 +79,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          files: build/installer-inno/*.exe
+          files: build/installer-inno/*.zip
           generate_release_notes: true
           draft: true
