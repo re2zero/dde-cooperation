@@ -19,7 +19,7 @@ SessionManager::SessionManager(QObject *parent) : QObject(parent)
 {
     _trans_workers.clear();
     // Create session and transfer worker
-    _session_worker = std::make_shared<SessionWorker>();
+    _session_worker = std::make_shared<SessionWorker>(this);
     connect(_session_worker.get(), &SessionWorker::onConnectChanged, this, &SessionManager::notifyConnection, Qt::QueuedConnection);
     connect(_session_worker.get(), &SessionWorker::onTransData, this, &SessionManager::handleTransData, Qt::QueuedConnection);
     connect(_session_worker.get(), &SessionWorker::onTransCount, this, &SessionManager::handleTransCount, Qt::QueuedConnection);
@@ -27,7 +27,7 @@ SessionManager::SessionManager(QObject *parent) : QObject(parent)
     connect(_session_worker.get(), &SessionWorker::onRpcResult, this, &SessionManager::handleRpcResult, Qt::QueuedConnection);
 
     _file_counter = std::make_shared<FileSizeCounter>(this);
-    connect(_file_counter.get(), &FileSizeCounter::onCountFinish, this, &SessionManager::handleFileCounted);
+    connect(_file_counter.get(), &FileSizeCounter::onCountFinish, this, &SessionManager::handleFileCounted, Qt::QueuedConnection);
 }
 
 SessionManager::~SessionManager()
@@ -253,10 +253,8 @@ void SessionManager::handleFileCounted(const QString ip, const QStringList paths
         return;
     }
     std::vector<std::string> nameVector;
-    for (auto path : paths) {
-        QFileInfo fileInfo(path);
-        std::string name = fileInfo.fileName().toStdString();
-        nameVector.push_back(name);
+    foreach (const QString &path, paths) {
+        nameVector.push_back(path.toStdString());
     }
 
     TransDataMessage req;
