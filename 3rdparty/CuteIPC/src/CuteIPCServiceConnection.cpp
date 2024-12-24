@@ -20,7 +20,11 @@ CuteIPCServiceConnection::CuteIPCServiceConnection(QLocalSocket* socket, CuteIPC
   connect(socket, SIGNAL(disconnected()), socket, SLOT(deleteLater()));
   connect(socket, SIGNAL(disconnected()), SLOT(deleteLater()));
   connect(this, SIGNAL(destroyed(QObject*)), parent, SLOT(_q_connectionDestroyed(QObject*)));
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+  connect(socket, SIGNAL(errorOccurred(QLocalSocket::LocalSocketError)), SLOT(errorOccured(QLocalSocket::LocalSocketError)));
+#else
   connect(socket, SIGNAL(error(QLocalSocket::LocalSocketError)), SLOT(errorOccured(QLocalSocket::LocalSocketError)));
+#endif
   connect(this, SIGNAL(signalRequest(QString,QString,QObject*)), parent, SLOT(_q_handleSignalRequest(QString,QString,QObject*)));
   connect(this, SIGNAL(signalDisconnectRequest(QString,QString,QObject*)),
           parent, SLOT(_q_handleSignalDisconnect(QString,QString,QObject*)));

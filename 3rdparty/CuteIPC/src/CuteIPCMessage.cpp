@@ -16,28 +16,37 @@ CuteIPCMessage::CuteIPCMessage(MessageType type, const QString& method,
 
   m_method = method;
 
-  if (val0.data())
-    m_arguments.append(val0);
-  if (val1.data())
-    m_arguments.append(val1);
-  if (val2.data())
-    m_arguments.append(val2);
-  if (val3.data())
-    m_arguments.append(val3);
-  if (val4.data())
-    m_arguments.append(val4);
-  if (val5.data())
-    m_arguments.append(val5);
-  if (val6.data())
-    m_arguments.append(val6);
-  if (val7.data())
-    m_arguments.append(val7);
-  if (val8.data())
-    m_arguments.append(val8);
-  if (val9.data())
-    m_arguments.append(val9);
-
   m_returnType = returnType;
+
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+  // Qt6方式：处理QMetaMethodArgument
+  auto addArg = [this](const QGenericArgument& arg) {
+    if (arg.name()) {
+      #if defined(Q_CC_MSVC)
+        const QMetaMethodArgument& metaArg = reinterpret_cast<const QMetaMethodArgument&>(arg);
+        m_arguments.append(QGenericArgument(metaArg.name.constData(), metaArg.data));
+      #else
+        const QMetaMethodArgument& metaArg = static_cast<const QMetaMethodArgument&>(arg);
+        m_arguments.append(QGenericArgument(metaArg.name.constData(), metaArg.data));
+      #endif
+    }
+  };
+
+  addArg(val0); addArg(val1); addArg(val2); addArg(val3); addArg(val4);
+  addArg(val5); addArg(val6); addArg(val7); addArg(val8); addArg(val9);
+#else
+  // Qt5方式：保持原有实现
+  if (val0.data()) m_arguments.append(val0);
+  if (val1.data()) m_arguments.append(val1);
+  if (val2.data()) m_arguments.append(val2);
+  if (val3.data()) m_arguments.append(val3);
+  if (val4.data()) m_arguments.append(val4);
+  if (val5.data()) m_arguments.append(val5);
+  if (val6.data()) m_arguments.append(val6);
+  if (val7.data()) m_arguments.append(val7);
+  if (val8.data()) m_arguments.append(val8);
+  if (val9.data()) m_arguments.append(val9);
+#endif
 }
 
 

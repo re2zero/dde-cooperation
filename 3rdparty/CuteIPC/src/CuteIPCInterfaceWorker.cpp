@@ -51,7 +51,13 @@ void CuteIPCInterfaceWorker::connectToServer(const QString& name, void* successf
 
     // Register connection ID on the serverside
     QString id = connectionId();
-    CuteIPCMessage message(CuteIPCMessage::ConnectionInitialize, "", Q_ARG(QString, id));
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
+    QGenericArgument genArg = Q_ARG(QString, id);
+#else
+    auto arg = Q_ARG(QString, id);
+    QGenericArgument genArg("QString", arg.data);
+#endif
+    CuteIPCMessage message(CuteIPCMessage::ConnectionInitialize, "", genArg);
     QByteArray request = CuteIPCMarshaller::marshallMessage(message);
 
     DEBUG << "Send connection ID to the server:" << id;
@@ -98,7 +104,13 @@ void CuteIPCInterfaceWorker::connectToTcpServer(const QHostAddress& host, const 
 
     // Register connection ID on the serverside
     QString id = connectionId();
-    CuteIPCMessage message(CuteIPCMessage::ConnectionInitialize, "", Q_ARG(QString, id));
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
+    QGenericArgument genArg = Q_ARG(QString, id);
+#else
+    auto arg = Q_ARG(QString, id);
+    QGenericArgument genArg("QString", arg.data);
+#endif
+    CuteIPCMessage message(CuteIPCMessage::ConnectionInitialize, "", genArg);
     QByteArray request = CuteIPCMarshaller::marshallMessage(message);
 
     DEBUG << "Send connection ID to the server:" << id;

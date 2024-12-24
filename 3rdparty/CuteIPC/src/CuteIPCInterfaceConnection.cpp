@@ -17,7 +17,11 @@ CuteIPCInterfaceConnection::CuteIPCInterfaceConnection(QLocalSocket* socket, QOb
     m_lastCallSuccessful(false)
 {
   connect(socket, SIGNAL(disconnected()), SIGNAL(socketDisconnected()));
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+  connect(socket, SIGNAL(errorOccurred(QLocalSocket::LocalSocketError)), SLOT(errorOccured(QLocalSocket::LocalSocketError)));
+#else
   connect(socket, SIGNAL(error(QLocalSocket::LocalSocketError)), SLOT(errorOccured(QLocalSocket::LocalSocketError)));
+#endif
   connect(socket, SIGNAL(readyRead()), SLOT(readyRead()));
 }
 

@@ -121,7 +121,69 @@ void CuteIPCSignalHandler::listenerDestroyed(QObject* listener)
 // the relaySlot slot has local ID 1 (we use this when calling QMetaObject::connect)
 // it also gets called with the void** array
 
-#if QT_VERSION >= 0x050000
+#if QT_VERSION >= 0x060000
+
+#define Q_STATIC_ARRAY_DATA_HEADER_INITIALIZER_WITH_OFFSET(size, offset) \
+    { Q_REFCOUNT_INITIALIZE_STATIC, size, 0, 0, offset } \
+
+#define Q_STATIC_BYTE_ARRAY_DATA_HEADER_INITIALIZER_WITH_OFFSET(size, offset) \
+    Q_STATIC_ARRAY_DATA_HEADER_INITIALIZER_WITH_OFFSET(size, offset)
+
+QT_WARNING_DISABLE_GCC("-Wuseless-cast")
+namespace {
+
+#ifdef QT_MOC_HAS_STRINGDATA
+struct qt_meta_stringdata_CLASSCuteIPCSignalHandlerENDCLASS_t {};
+static constexpr auto qt_meta_stringdata_CLASSCuteIPCSignalHandlerENDCLASS = QtMocHelpers::stringData(
+    "CuteIPCSignalHandler"
+);
+#else  // !QT_MOC_HAS_STRING_DATA
+struct qt_meta_stringdata_CLASSCuteIPCSignalHandlerENDCLASS_t {
+    uint offsetsAndSizes[2];
+    char stringdata0[21];
+};
+#define QT_MOC_LITERAL(ofs, len) \
+    uint(sizeof(qt_meta_stringdata_CLASSCuteIPCSignalHandlerENDCLASS_t::offsetsAndSizes) + ofs), len 
+Q_CONSTINIT static const qt_meta_stringdata_CLASSCuteIPCSignalHandlerENDCLASS_t qt_meta_stringdata_CLASSCuteIPCSignalHandlerENDCLASS = {
+    {
+        QT_MOC_LITERAL(0, 20)   // "CuteIPCSignalHandler"
+    },
+    "CuteIPCSignalHandler"
+};
+#undef QT_MOC_LITERAL
+#endif // !QT_MOC_HAS_STRING_DATA
+} // unnamed namespace
+
+Q_CONSTINIT static const uint qt_meta_data_CLASSCuteIPCSignalHandlerENDCLASS[] = {
+
+ // content:
+      12,       // revision
+       0,       // classname
+       0,    0, // classinfo
+       0,    0, // methods
+       0,    0, // properties
+       0,    0, // enums/sets
+       0,    0, // constructors
+       0,       // flags
+       0,       // signalCount
+
+       0        // eod
+};
+
+Q_CONSTINIT const QMetaObject CuteIPCSignalHandler::staticMetaObject = { {
+    QMetaObject::SuperData::link<QObject::staticMetaObject>(),
+    qt_meta_stringdata_CLASSCuteIPCSignalHandlerENDCLASS.offsetsAndSizes,
+    qt_meta_data_CLASSCuteIPCSignalHandlerENDCLASS,
+    0,
+    0,
+    qt_incomplete_metaTypeArray<qt_meta_stringdata_CLASSCuteIPCSignalHandlerENDCLASS_t,
+        // Q_OBJECT / Q_GADGET
+        QtPrivate::TypeAndForceComplete<CuteIPCSignalHandler, std::true_type>
+    >,
+    0
+} };
+
+#elif QT_VERSION >= 0x050000
 struct qt_meta_stringdata_CuteIPCSignalHandler_t {
     QByteArrayData data[12];
     char stringdata[152];
@@ -266,7 +328,9 @@ void *CuteIPCSignalHandler::qt_metacast(const char *_clname)
 {
   if (!_clname) return 0;
 
-#if QT_VERSION >= 0x050000
+#if QT_VERSION >= 0x060000
+  if (!strcmp(_clname, qt_meta_stringdata_CLASSCuteIPCSignalHandlerENDCLASS.stringdata0))
+#elif QT_VERSION >= 0x050000
   if (!strcmp(_clname, qt_meta_stringdata_CuteIPCSignalHandler.stringdata))
 #else
   if (!strcmp(_clname, qt_meta_stringdata_CuteIPCSignalHandler))

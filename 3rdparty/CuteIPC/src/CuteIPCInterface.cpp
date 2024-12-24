@@ -90,7 +90,13 @@ bool CuteIPCInterfacePrivate::sendRemoteConnectRequest(const QString& signalSign
 
   DEBUG << "Requesting connection to signal" << signalSignature << "Worker connection ID: " << connectionId;
 
-  CuteIPCMessage message(CuteIPCMessage::SignalConnectionRequest, signalSignature, Q_ARG(QString, connectionId));
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
+  QGenericArgument genArg = Q_ARG(QString, connectionId);
+#else
+  auto arg = Q_ARG(QString, connectionId);
+  QGenericArgument genArg("QString", arg.data);
+#endif
+  CuteIPCMessage message(CuteIPCMessage::SignalConnectionRequest, signalSignature, genArg);
   QByteArray request = CuteIPCMarshaller::marshallMessage(message);
 
   return sendSynchronousRequest(request);
@@ -102,8 +108,15 @@ bool CuteIPCInterfacePrivate::sendRemoteDisconnectRequest(const QString& signalS
   DEBUG << "Requesting remote signal disconnect" << signalSignature;
 
   QString connectionId = m_worker->connectionId();
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
+  QGenericArgument genArg = Q_ARG(QString, connectionId);
+#else
+  auto arg = Q_ARG(QString, connectionId);
+  QGenericArgument genArg("QString", arg.data);
+#endif
+
   CuteIPCMessage::Arguments args;
-  args.push_back(Q_ARG(QString, connectionId));
+  args.push_back(genArg);
   CuteIPCMessage message(CuteIPCMessage::SignalConnectionRequest, signalSignature, args, "disconnect");
   QByteArray request = CuteIPCMarshaller::marshallMessage(message);
 
@@ -249,7 +262,8 @@ void CuteIPCInterfacePrivate::handleLocalSignalRequest(QObject* localObject, con
 void CuteIPCInterfacePrivate::_q_removeSignalHandlersOfObject(QObject* destroyedObject)
 {
   auto it = m_localSignalHandlers.begin();
-  while (it != m_localSignalHandlers.end()) {
+  while (it != m_localSignalHandlers.end())
+  {
     MethodData data = it.key();
     if (data.first == destroyedObject)
       it = m_localSignalHandlers.erase(it);
@@ -275,14 +289,31 @@ void CuteIPCInterfacePrivate::registerConnection(const QString& signalSignature,
 
 void CuteIPCInterfacePrivate::_q_removeRemoteConnectionsOfObject(QObject* destroyedObject)
 {
-  QMutableHashIterator<QString, MethodData> i(m_connections);
-  while (i.hasNext())
+  auto it = m_connections.begin();
+  while (it != m_connections.end())
   {
-    i.next();
-    MethodData data = i.value();
+    MethodData data = it.value();
     if (data.first == destroyedObject)
-      i.remove();
+      it = m_connections.erase(it);
+    else
+      ++it;
   }
+}
+
+bool CuteIPCInterfacePrivate::call(const QString& method,
+                                  const QGenericReturnArgument& ret,
+                                  const CuteIPCMessage::Arguments& arguments)
+{
+    // 构造消息
+    CuteIPCMessage message(CuteIPCMessage::MessageCallWithReturn, 
+                          method,
+                          arguments,
+                          ret.name() ? QString::fromLatin1(ret.name()) : QString());
+    
+    // 序列化并发送请求
+    QByteArray request = CuteIPCMarshaller::marshallMessage(message);
+    DEBUG << "Remote call" << method;
+    return sendSynchronousRequest(request, ret);
 }
 
 
@@ -726,45 +757,60 @@ bool CuteIPCInterface::disconnectSlot(QObject* localObject, const char* signal, 
     \note This method doesn't establish the connection to the server, you must use connectToServer() first.
     \sa callNoReply()
  */
-bool CuteIPCInterface::call(const QString& method, QGenericReturnArgument ret, QGenericArgument val0,
-                            QGenericArgument val1, QGenericArgument val2,
-                            QGenericArgument val3, QGenericArgument val4,
-                            QGenericArgument val5, QGenericArgument val6,
-                            QGenericArgument val7, QGenericArgument val8,
-                            QGenericArgument val9)
+bool CuteIPCInterface::callImpl(const QString& method, 
+                               const CUTE_IPC_RETURN_ARG& ret,
+                               const CUTE_IPC_ARG* args,
+                               int argc)
 {
-  Q_D(CuteIPCInterface);
-  CuteIPCMessage message(CuteIPCMessage::MessageCallWithReturn, method, val0, val1, val2, val3, val4,
-                         val5, val6, val7, val8, val9, QString::fromLatin1(ret.name()));
-  QByteArray request = CuteIPCMarshaller::marshallMessage(message);
-
-  DEBUG << "Remote call" << method;
-  return d->sendSynchronousRequest(request, ret);
+    Q_D(CuteIPCInterface);
+    
+    // 构建参数列表
+    CuteIPCMessage::Arguments arguments;
+    arguments.reserve(argc);
+    for(int i = 0; i < argc; ++i) {
+        if(args[i].name()) {
+            arguments.append(args[i]);
+        }
+    }
+    
+    return d->call(method, ret, arguments);
 }
 
-
-/*!
-    This function overloads call() method.
-    This overload can be used if the return value of the member is of no interest.
-
-    \note To set arguments, you must enclose them using Q_ARG macro.
-    \note This method doesn't establish the connection to the server, you must use connectToServer() first.
-    \sa callNoReply()
- */
-bool CuteIPCInterface::call(const QString& method, QGenericArgument val0, QGenericArgument val1, QGenericArgument val2,
-                            QGenericArgument val3, QGenericArgument val4, QGenericArgument val5, QGenericArgument val6,
-                            QGenericArgument val7, QGenericArgument val8, QGenericArgument val9)
+bool CuteIPCInterface::call(const QString& method, 
+                           CUTE_IPC_RETURN_ARG ret,
+                           CUTE_IPC_ARG val0,
+                           CUTE_IPC_ARG val1,
+                           CUTE_IPC_ARG val2,
+                           CUTE_IPC_ARG val3,
+                           CUTE_IPC_ARG val4,
+                           CUTE_IPC_ARG val5,
+                           CUTE_IPC_ARG val6,
+                           CUTE_IPC_ARG val7,
+                           CUTE_IPC_ARG val8,
+                           CUTE_IPC_ARG val9)
 {
-  Q_D(CuteIPCInterface);
-  CuteIPCMessage message(CuteIPCMessage::MessageCallWithReturn, method, val0, val1, val2, val3, val4,
-                         val5, val6, val7, val8, val9);
-  QByteArray request = CuteIPCMarshaller::marshallMessage(message);
-
-  DEBUG << "Remote call" << method;
-  return d->sendSynchronousRequest(request);
+    const CUTE_IPC_ARG args[] = {
+        val0, val1, val2, val3, val4, val5, val6, val7, val8, val9
+    };
+    return callImpl(method, ret, args, 10);
 }
 
-
+bool CuteIPCInterface::call(const QString& method,
+                           CUTE_IPC_ARG val0,
+                           CUTE_IPC_ARG val1,
+                           CUTE_IPC_ARG val2,
+                           CUTE_IPC_ARG val3,
+                           CUTE_IPC_ARG val4,
+                           CUTE_IPC_ARG val5,
+                           CUTE_IPC_ARG val6,
+                           CUTE_IPC_ARG val7,
+                           CUTE_IPC_ARG val8,
+                           CUTE_IPC_ARG val9)
+{
+    return call(method, CUTE_IPC_RETURN_ARG(), 
+               val0, val1, val2, val3, val4,
+               val5, val6, val7, val8, val9);
+}
 
 /*!
     Invokes the remote \a method (of the server). Returns true if the invokation was successful, false otherwise.
@@ -782,18 +828,46 @@ bool CuteIPCInterface::call(const QString& method, QGenericArgument val0, QGener
     \note This method doesn't establish the connection to the server, you must use connectToServer() first.
     \sa call(), connectToServer()
  */
-void CuteIPCInterface::callNoReply(const QString& method, QGenericArgument val0, QGenericArgument val1,
-                                        QGenericArgument val2, QGenericArgument val3, QGenericArgument val4,
-                                        QGenericArgument val5, QGenericArgument val6, QGenericArgument val7,
-                                        QGenericArgument val8, QGenericArgument val9)
+void CuteIPCInterface::callNoReply(const QString& method, 
+                                  CUTE_IPC_ARG val0,
+                                  CUTE_IPC_ARG val1,
+                                  CUTE_IPC_ARG val2,
+                                  CUTE_IPC_ARG val3,
+                                  CUTE_IPC_ARG val4,
+                                  CUTE_IPC_ARG val5,
+                                  CUTE_IPC_ARG val6,
+                                  CUTE_IPC_ARG val7,
+                                  CUTE_IPC_ARG val8,
+                                  CUTE_IPC_ARG val9)
 {
-  Q_D(CuteIPCInterface);
-  CuteIPCMessage message(CuteIPCMessage::MessageCallWithoutReturn, method, val0, val1, val2, val3, val4,
-                         val5, val6, val7, val8, val9);
-  QByteArray request = CuteIPCMarshaller::marshallMessage(message);
+    Q_D(CuteIPCInterface);
 
-  DEBUG << "Remote call (asynchronous)" << method;
-  d->_q_sendAsynchronousRequest(request);
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    // Qt6: 需要转换参数类型
+    CuteIPCMessage::Arguments arguments;
+    arguments.reserve(10);
+    
+    const CUTE_IPC_ARG args[] = {
+        val0, val1, val2, val3, val4, val5, val6, val7, val8, val9
+    };
+    
+    for(int i = 0; i < 10; ++i) {
+        if(args[i].name.constData()) {
+            arguments.append(QGenericArgument(args[i].name.constData(), args[i].data));
+        }
+    }
+    
+    CuteIPCMessage message(CuteIPCMessage::MessageCallWithoutReturn, method, arguments);
+#else
+    // Qt5: 直接使用参数
+    CuteIPCMessage message(CuteIPCMessage::MessageCallWithoutReturn, method, 
+                          val0, val1, val2, val3, val4,
+                          val5, val6, val7, val8, val9);
+#endif
+
+    QByteArray request = CuteIPCMarshaller::marshallMessage(message);
+    DEBUG << "Remote call (asynchronous)" << method;
+    d->_q_sendAsynchronousRequest(request);
 }
 
 
@@ -807,3 +881,4 @@ QString CuteIPCInterface::lastError() const
 }
 
 #include "moc_CuteIPCInterface.cpp"
+

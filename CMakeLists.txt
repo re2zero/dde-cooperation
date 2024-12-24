@@ -103,7 +103,7 @@ if(NOT DEFINED ENV{QT_SELECT})
 endif()
 message("   >>> Build with Qt version: $ENV{QT_SELECT}")
 
-if (QT_VERSION_MAJOR EQUAL "6")
+if (QT_VERSION_MAJOR MATCHES 6)
     set(DTK_VERSION_MAJOR 6)
 else()
     set(DTK_VERSION_MAJOR "")
