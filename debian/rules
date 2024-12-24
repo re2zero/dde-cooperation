@@ -6,8 +6,10 @@ define detect_qt_version
 ifneq (,$(shell which qmake6 2>/dev/null))
     $(shell qtchooser -install qt6 $(shell which qmake6))
     export QT_SELECT=qt6
+	export QT_DIR="/usr/lib/$(DEB_HOST_MULTIARCH)/cmake/Qt6"
 else
     export QT_SELECT=qt5
+	export QT_DIR="/usr/lib/$(DEB_HOST_MULTIARCH)/cmake/Qt5"
 endif
 endef
 
@@ -24,4 +26,5 @@ override_dh_auto_configure:
 	-DCMAKE_INSTALL_PREFIX=/usr \
 	-DCMAKE_BUILD_TYPE=Release \
 	-DHOST_MULTIARCH="$(DEB_HOST_MULTIARCH)" \
-	-DAPP_VERSION=$(DEB_VERSION_UPSTREAM)
+	-DAPP_VERSION=$(DEB_VERSION_UPSTREAM) \
+	-DQT_DIR=$(QT_DIR)
