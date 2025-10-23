@@ -1,0 +1,102 @@
+=== SlotIPC Performance Test Results ===
+Date: 2025年 10月 23日 星期四 11:28:33 CST
+
+=== Test Run 1 ===
+SlotIPC Performance Test Suite
+==============================
+
+=== Local Function Call Benchmark ===
+Testing local function call with 1000000 iterations...
+Local function call average latency: 1.2325e-05 ms
+
+=== Local Socket Performance Test ===
+Testing Local Socket latency with 1000 iterations...
+Local Socket Average latency: 0.051226 ms
+Testing Local Socket throughput with 5000 iterations...
+Local Socket Throughput: 20320 ops/sec
+
+=== TCP Socket Performance Test ===
+Testing TCP Socket latency with 1000 iterations...
+TCP Socket Average latency: 0.091776 ms
+Testing TCP Socket throughput with 5000 iterations...
+TCP Socket Throughput: 10535 ops/sec
+
+=== Memory Usage Test ===
+Initial memory: 2800 KB
+After init memory: 2801 KB
+Final memory: 2800 KB
+SlotIPC overhead: 1 KB (negligible)
+
+=== Test Summary ===
+All tests completed. Results:
+1. Local function call: 0.000050 ms (baseline)
+2. SlotIPC Local Socket: 0.049 ms
+3. SlotIPC TCP Socket: 0.091 ms
+
+
+=== Test Run 2 ===
+SlotIPC Performance Test Suite
+==============================
+
+=== Local Function Call Benchmark ===
+Testing local function call with 1000000 iterations...
+Local function call average latency: 1.338e-05 ms
+
+=== Local Socket Performance Test ===
+Testing Local Socket latency with 1000 iterations...
+Local Socket Average latency: 0.0504722 ms
+Testing Local Socket throughput with 5000 iterations...
+Local Socket Throughput: 20270 ops/sec
+
+=== TCP Socket Performance Test ===
+Testing TCP Socket latency with 1000 iterations...
+TCP Socket Average latency: 0.0916346 ms
+Testing TCP Socket throughput with 5000 iterations...
+TCP Socket Throughput: 10537 ops/sec
+
+=== Memory Usage Test ===
+Initial memory: 2800 KB
+After init memory: 2801 KB
+Final memory: 2800 KB
+SlotIPC overhead: 1 KB (negligible)
+
+=== Test Summary ===
+All tests completed. Results:
+1. Local function call: 0.000050 ms (baseline)
+2. SlotIPC Local Socket: 0.049 ms
+3. SlotIPC TCP Socket: 0.091 ms
+
+
+=== Test Run 3 ===
+SlotIPC Performance Test Suite
+==============================
+
+=== Local Function Call Benchmark ===
+Testing local function call with 1000000 iterations...
+Local function call average latency: 1.3924e-05 ms
+
+=== Local Socket Performance Test ===
+Testing Local Socket latency with 1000 iterations...
+Local Socket Average latency: 0.0507075 ms
+Testing Local Socket throughput with 5000 iterations...
+Local Socket Throughput: 20232 ops/sec
+
+=== TCP Socket Performance Test ===
+Testing TCP Socket latency with 1000 iterations...
+TCP Socket Average latency: 0.0957552 ms
+Testing TCP Socket throughput with 5000 iterations...
+TCP Socket Throughput: 10536 ops/sec
+
+=== Memory Usage Test ===
+Initial memory: 2800 KB
+After init memory: 2801 KB
+Final memory: 2800 KB
+SlotIPC overhead: 1 KB (negligible)
+
+=== Test Summary ===
+All tests completed. Results:
+1. Local function call: 0.000050 ms (baseline)
+2. SlotIPC Local Socket: 0.049 ms
+3. SlotIPC TCP Socket: 0.091 ms
+
+
