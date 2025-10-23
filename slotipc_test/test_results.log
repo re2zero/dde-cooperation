@@ -1,102 +1,111 @@
-=== SlotIPC Performance Test Results ===
-Date: 2025年 10月 23日 星期四 11:28:33 CST
+SlotIPC Real Performance Test Results
+Date: 2025年 10月 23日 星期四 13:50:33 CST
 
-=== Test Run 1 ===
+=== SlotIPC Test Run 1 ===
 SlotIPC Performance Test Suite
 ==============================
 
 === Local Function Call Benchmark ===
-Testing local function call with 1000000 iterations...
-Local function call average latency: 1.2325e-05 ms
+"Testing local function call with 1000000 iterations..."
+"Local function call average latency: 0.000099 ms"
 
 === Local Socket Performance Test ===
-Testing Local Socket latency with 1000 iterations...
-Local Socket Average latency: 0.051226 ms
-Testing Local Socket throughput with 5000 iterations...
-Local Socket Throughput: 20320 ops/sec
+"Testing Local Socket latency with 1000 iterations..."
+"Local Socket Average latency: 0.051 ms"
+"Testing Local Socket throughput with 5000 iterations..."
+"Local Socket Throughput: 45872 ops/sec"
 
 === TCP Socket Performance Test ===
-Testing TCP Socket latency with 1000 iterations...
-TCP Socket Average latency: 0.091776 ms
-Testing TCP Socket throughput with 5000 iterations...
-TCP Socket Throughput: 10535 ops/sec
+"Testing TCP Socket latency with 1000 iterations..."
+"TCP Socket Average latency: 0.092 ms"
+"Testing TCP Socket throughput with 5000 iterations..."
+"TCP Socket Throughput: 46729 ops/sec"
+QMetaObject::invokeMethod: No such method QObject::voidMethod()
+SlotIPC: Error message was sent: "Unsuccessful invoke"
 
 === Memory Usage Test ===
-Initial memory: 2800 KB
-After init memory: 2801 KB
-Final memory: 2800 KB
-SlotIPC overhead: 1 KB (negligible)
+"Initial memory: 18432 KB"
+"After init memory: 18432 KB"
+"Final memory: 18432 KB"
+"SlotIPC overhead: 0 KB"
 
 === Test Summary ===
-All tests completed. Results:
-1. Local function call: 0.000050 ms (baseline)
-2. SlotIPC Local Socket: 0.049 ms
-3. SlotIPC TCP Socket: 0.091 ms
+All tests completed. Please compare the results:
+1. Local function call: ~0.000x ms (baseline)
+2. SlotIPC Local Socket: ~x.xxx ms
+3. SlotIPC TCP Socket: ~x.xxx ms
 
+Note: For complete comparison, implement gRPC benchmark separately.
 
-=== Test Run 2 ===
+=== SlotIPC Test Run 2 ===
 SlotIPC Performance Test Suite
 ==============================
 
 === Local Function Call Benchmark ===
-Testing local function call with 1000000 iterations...
-Local function call average latency: 1.338e-05 ms
+"Testing local function call with 1000000 iterations..."
+"Local function call average latency: 0.000082 ms"
 
 === Local Socket Performance Test ===
-Testing Local Socket latency with 1000 iterations...
-Local Socket Average latency: 0.0504722 ms
-Testing Local Socket throughput with 5000 iterations...
-Local Socket Throughput: 20270 ops/sec
+"Testing Local Socket latency with 1000 iterations..."
+"Local Socket Average latency: 0.048 ms"
+"Testing Local Socket throughput with 5000 iterations..."
+"Local Socket Throughput: 47619 ops/sec"
 
 === TCP Socket Performance Test ===
-Testing TCP Socket latency with 1000 iterations...
-TCP Socket Average latency: 0.0916346 ms
-Testing TCP Socket throughput with 5000 iterations...
-TCP Socket Throughput: 10537 ops/sec
+"Testing TCP Socket latency with 1000 iterations..."
+"TCP Socket Average latency: 0.093 ms"
+"Testing TCP Socket throughput with 5000 iterations..."
+"TCP Socket Throughput: 48077 ops/sec"
+QMetaObject::invokeMethod: No such method QObject::voidMethod()
+SlotIPC: Error message was sent: "Unsuccessful invoke"
 
 === Memory Usage Test ===
-Initial memory: 2800 KB
-After init memory: 2801 KB
-Final memory: 2800 KB
-SlotIPC overhead: 1 KB (negligible)
+"Initial memory: 18432 KB"
+"After init memory: 18432 KB"
+"Final memory: 18432 KB"
+"SlotIPC overhead: 0 KB"
 
 === Test Summary ===
-All tests completed. Results:
-1. Local function call: 0.000050 ms (baseline)
-2. SlotIPC Local Socket: 0.049 ms
-3. SlotIPC TCP Socket: 0.091 ms
+All tests completed. Please compare the results:
+1. Local function call: ~0.000x ms (baseline)
+2. SlotIPC Local Socket: ~x.xxx ms
+3. SlotIPC TCP Socket: ~x.xxx ms
 
+Note: For complete comparison, implement gRPC benchmark separately.
 
-=== Test Run 3 ===
+=== SlotIPC Test Run 3 ===
 SlotIPC Performance Test Suite
 ==============================
 
 === Local Function Call Benchmark ===
-Testing local function call with 1000000 iterations...
-Local function call average latency: 1.3924e-05 ms
+"Testing local function call with 1000000 iterations..."
+"Local function call average latency: 0.000088 ms"
 
 === Local Socket Performance Test ===
-Testing Local Socket latency with 1000 iterations...
-Local Socket Average latency: 0.0507075 ms
-Testing Local Socket throughput with 5000 iterations...
-Local Socket Throughput: 20232 ops/sec
+"Testing Local Socket latency with 1000 iterations..."
+"Local Socket Average latency: 0.049 ms"
+"Testing Local Socket throughput with 5000 iterations..."
+"Local Socket Throughput: 48077 ops/sec"
 
 === TCP Socket Performance Test ===
-Testing TCP Socket latency with 1000 iterations...
-TCP Socket Average latency: 0.0957552 ms
-Testing TCP Socket throughput with 5000 iterations...
-TCP Socket Throughput: 10536 ops/sec
+"Testing TCP Socket latency with 1000 iterations..."
+"TCP Socket Average latency: 0.093 ms"
+"Testing TCP Socket throughput with 5000 iterations..."
+"TCP Socket Throughput: 48077 ops/sec"
+QMetaObject::invokeMethod: No such method QObject::voidMethod()
+SlotIPC: Error message was sent: "Unsuccessful invoke"
 
 === Memory Usage Test ===
-Initial memory: 2800 KB
-After init memory: 2801 KB
-Final memory: 2800 KB
-SlotIPC overhead: 1 KB (negligible)
+"Initial memory: 18944 KB"
+"After init memory: 18944 KB"
+"Final memory: 18944 KB"
+"SlotIPC overhead: 0 KB"
 
 === Test Summary ===
-All tests completed. Results:
-1. Local function call: 0.000050 ms (baseline)
-2. SlotIPC Local Socket: 0.049 ms
-3. SlotIPC TCP Socket: 0.091 ms
+All tests completed. Please compare the results:
+1. Local function call: ~0.000x ms (baseline)
+2. SlotIPC Local Socket: ~x.xxx ms
+3. SlotIPC TCP Socket: ~x.xxx ms
 
+Note: For complete comparison, implement gRPC benchmark separately.
 

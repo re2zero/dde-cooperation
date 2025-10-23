@@ -1,0 +1,17 @@
+gRPC Real Performance Test Results
+Date: 2025年 10月 23日 星期四 13:50:48 CST
+
+gRPC Performance Test Suite
+==============================
+
+Testing gRPC latency with 1000 iterations...
+gRPC Average latency: 0.018207 ms
+
+Testing gRPC throughput with 5000 iterations...
+gRPC Throughput: 106383 ops/sec
+
+=== gRPC Test Summary ===
+gRPC Average latency: 0.018207 ms
+gRPC Throughput: 106383 ops/sec
+
+Note: Compare these results with SlotIPC performance data.
