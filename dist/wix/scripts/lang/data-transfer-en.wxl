@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<WixLocalization Culture="en-us" xmlns="http://wixtoolset.org/schemas/v4/wxl">
+  <!-- English (en) UI Strings -->
+  <String Id="ProductName">deepin-datatransfer</String>
+  <String Id="ProductDescription">Deepin Data Migration Tool</String>
+  <String Id="Manufacturer">Uniontech, Inc.</String>
+  
+  <!-- Installation Wizard Strings -->
+  <String Id="WelcomeDlgTitle">Welcome to deepin-datatransfer Setup</String>
+  <String Id="WelcomeDlgDescription">Setup will install deepin-datatransfer on your computer.</String>
+  <String Id="ExitDlgTitle">Completing deepin-datatransfer Setup</String>
+  <String Id="ExitDlgDescription">deepin-datatransfer has been successfully installed on your computer.</String>
+  
+  <!-- Feature Titles -->
+  <String Id="FeatureTitle">deepin-datatransfer</String>
+  <String Id="FeatureDescription">Install deepin-datatransfer and all components</String>
+</WixLocalization>

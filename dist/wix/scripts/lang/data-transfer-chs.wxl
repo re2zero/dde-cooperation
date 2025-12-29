@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<WixLocalization Culture="zh-cn" xmlns="http://wixtoolset.org/schemas/v4/wxl">
+  <!-- Chinese (chs) UI Strings -->
+  <String Id="ProductName">数据迁移</String>
+  <String Id="ProductDescription">Deepin Data Migration Tool</String>
+  <String Id="Manufacturer">Uniontech, Inc.</String>
+  
+  <!-- Installation Wizard Strings -->
+  <String Id="WelcomeDlgTitle">欢迎使用 数据迁移 安装向导</String>
+  <String Id="WelcomeDlgDescription">安装程序将在您的计算机上安装 数据迁移。</String>
+  <String Id="ExitDlgTitle">正在完成 数据迁移 安装向导</String>
+  <String Id="ExitDlgDescription">数据迁移 已成功安装到您的计算机。</String>
+  
+  <!-- Feature Titles -->
+  <String Id="FeatureTitle">数据迁移</String>
+  <String Id="FeatureDescription">安装 数据迁移 及所有组件</String>
+</WixLocalization>

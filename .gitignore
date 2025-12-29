@@ -27,6 +27,8 @@ CMake*.json
 .qoder/
 .serena/
 
+deploy/
+
 # Modules
 modules/*
 !modules/CMakeLists.txt

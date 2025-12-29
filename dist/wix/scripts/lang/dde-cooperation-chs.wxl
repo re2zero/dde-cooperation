@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<WixLocalization Culture="zh-cn" xmlns="http://wixtoolset.org/schemas/v4/wxl">
+  <!-- Chinese (chs) UI Strings -->
+  <String Id="ProductName" Value="跨端协同" />
+  <String Id="ProductDescription" Value="Deepin Cross-Platform Cooperation Tool" />
+  <String Id="Manufacturer" Value="Uniontech, Inc." />
+  
+  <!-- Installation Wizard Strings -->
+  <String Id="WelcomeDlgTitle" Value="欢迎使用 跨端协同 安装向导" />
+  <String Id="WelcomeDlgDescription" Value="安装程序将在您的计算机上安装 跨端协同。" />
+  <String Id="ExitDlgTitle" Value="正在完成 跨端协同 安装向导" />
+  <String Id="ExitDlgDescription" Value="跨端协同 已成功安装到您的计算机。" />
+  
+  <!-- Feature Titles -->
+  <String Id="FeatureTitle" Value="跨端协同" />
+  <String Id="FeatureDescription" Value="安装 跨端协同 及所有组件" />
+</WixLocalization>

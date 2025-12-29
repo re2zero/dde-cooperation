@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Include>
+  <!-- Chinese (chs) UI Strings -->
+  <String Id="ProductName">@PRODUCT_NAME@</String>
+  <String Id="ProductDescription">@PRODUCT_DESCRIPTION@</String>
+  <String Id="Manufacturer">Uniontech, Inc.</String>
+  
+  <!-- Installation Wizard Strings -->
+  <String Id="WelcomeDlgTitle">欢迎使用 @PRODUCT_NAME@ 安装向导</String>
+  <String Id="WelcomeDlgDescription">安装程序将在您的计算机上安装 @PRODUCT_NAME@。</String>
+  <String Id="ExitDialogTitle">正在完成 @PRODUCT_NAME@ 安装向导</String>
+  <String Id="ExitDlgDescription">@PRODUCT_NAME@ 已成功安装到您的计算机。</String>
+  
+  <!-- Feature Titles -->
+  <String Id="FeatureTitle">@PRODUCT_NAME@</String>
+  <String Id="FeatureDescription">安装 @PRODUCT_NAME@ 及所有组件</String>
+</Include>

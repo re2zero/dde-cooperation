@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<WixLocalization Culture="en-us" xmlns="http://wixtoolset.org/schemas/v4/wxl">
+  <!-- English (en) UI Strings -->
+  <String Id="ProductName" Value="deepin-cooperation" />
+  <String Id="ProductDescription" Value="Deepin Cross-Platform Cooperation Tool" />
+  <String Id="Manufacturer" Value="Uniontech, Inc." />
+  
+  <!-- Installation Wizard Strings -->
+  <String Id="WelcomeDlgTitle" Value="Welcome to deepin-cooperation Setup" />
+  <String Id="WelcomeDlgDescription" Value="Setup will install deepin-cooperation on your computer." />
+  <String Id="ExitDlgTitle" Value="Completing deepin-cooperation Setup" />
+  <String Id="ExitDlgDescription" Value="deepin-cooperation has been successfully installed on your computer." />
+  
+  <!-- Feature Titles -->
+  <String Id="FeatureTitle" Value="deepin-cooperation" />
+  <String Id="FeatureDescription" Value="Install deepin-cooperation and all components" />
+</WixLocalization>

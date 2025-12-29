@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Include>
+  <!-- English (en) UI Strings -->
+  <String Id="ProductName">@PRODUCT_NAME@</String>
+  <String Id="ProductDescription">@PRODUCT_DESCRIPTION@</String>
+  <String Id="Manufacturer">Uniontech, Inc.</String>
+  
+  <!-- Installation Wizard Strings -->
+  <String Id="WelcomeDlgTitle">Welcome to @PRODUCT_NAME@ Setup</String>
+  <String Id="WelcomeDlgDescription">Setup will install @PRODUCT_NAME@ on your computer.</String>
+  <String Id="ExitDialogTitle">Completing @PRODUCT_NAME@ Setup</String>
+  <String Id="ExitDlgDescription">@PRODUCT_NAME@ has been installed on your computer.</String>
+  
+  <!-- Feature Titles -->
+  <String Id="FeatureTitle">@PRODUCT_NAME@</String>
+  <String Id="FeatureDescription">Install @PRODUCT_NAME@ and all components</String>
+</Include>

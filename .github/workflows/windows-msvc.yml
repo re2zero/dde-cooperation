@@ -56,6 +56,13 @@ jobs:
           cmakeVersion: 3.31.5
           ninjaVersion: 1.11.1
 
+      - name: Setup WiX Toolset
+        run: |
+          echo "Installing WiX Toolset..."
+          winget install WiX.Toolset --accept-source-agreements --accept-package-agreements
+          echo "Verifying WiX installation..."
+          wix --version
+
       - name: Checkout
         uses: actions/checkout@v4
         with:
@@ -110,14 +117,100 @@ jobs:
               )
           )
 
-          echo ------------Build Packages (Inno + WiX)------------
-          cmake --build . --config %BUILD_TYPE% --target package
-          if ERRORLEVEL 1 echo Warning: Package build failed, continuing...
+          echo ------------Build MSI Packages with WiX ------------
+          mkdir _CPack_Packages
+          
+          REM Package dde-cooperation
+          echo.
+          echo Packaging %COO_PROJECT%...
+          mkdir wix-temp-coop
+          xcopy /E /I /Y output\%BUILD_TYPE%\%COO_PROJECT%\* wix-temp-coop\ > NUL
+          
+          if exist output\%COO_PROJECT%.wxs (
+              call :prepare_wxs output\%COO_PROJECT%.wxs wix-temp-coop %COO_PROJECT% %APP_VERSION% %vc_arch%
+              if ERRORLEVEL 1 exit /b 1
+              
+              cd wix-temp-coop
+              wix build main.wxs ^
+                -loc "%GITHUB_WORKSPACE%\source\dist\wix\scripts\lang\dde-cooperation-en.wxl" ^
+                -loc "%GITHUB_WORKSPACE%\source\dist\wix\scripts\lang\dde-cooperation-chs.wxl" ^
+                -out ..\_CPack_Packages\%COO_PROJECT%-%APP_VERSION%-win-%vc_arch%.msi
+              if ERRORLEVEL 1 exit /b 1
+              cd ..
+              rmdir /q /s wix-temp-coop
+              echo %COO_PROJECT% MSI created successfully!
+          ) else (
+              echo Warning: %COO_PROJECT%.wxs not found, skipping WiX packaging
+          )
+          
+          REM Package data-transfer
+          echo.
+          echo Packaging %DT_PROJECT%...
+          mkdir wix-temp-dt
+          xcopy /E /I /Y output\%BUILD_TYPE%\%DT_PROJECT%\* wix-temp-dt\ > NUL
+          
+          if exist output\%DT_PROJECT%.wxs (
+              call :prepare_wxs output\%DT_PROJECT%.wxs wix-temp-dt deepin-%DT_PROJECT% %APP_VERSION% %vc_arch%
+              if ERRORLEVEL 1 exit /b 1
+              
+              cd wix-temp-dt
+              wix build main.wxs ^
+                -loc "%GITHUB_WORKSPACE%\source\dist\wix\scripts\lang\data-transfer-en.wxl" ^
+                -loc "%GITHUB_WORKSPACE%\source\dist\wix\scripts\lang\data-transfer-chs.wxl" ^
+                -out ..\_CPack_Packages\deepin-%DT_PROJECT%-%APP_VERSION%-win-%vc_arch%.msi
+              if ERRORLEVEL 1 exit /b 1
+              cd ..
+              rmdir /q /s wix-temp-dt
+              echo deepin-%DT_PROJECT% MSI created successfully!
+          ) else (
+              echo Warning: %DT_PROJECT%.wxs not found, skipping WiX packaging
+          )
+          
+          echo.
+          echo ========================================
+          echo WiX packaging completed!
+          echo ========================================
+          
+          REM ========== Inno Setup (Alternative, Commented Out) ==========
+          REM If you prefer Inno Setup, uncomment the following lines:
+          REM
+          REM echo ------------Build EXE Packages with Inno Setup------------
+          REM set "INNO_ROOT=C:\Program Files (x86)\Inno Setup 6"
+          REM "%INNO_ROOT%\ISCC.exe" /Qp %COO_PROJECT%-setup.iss
+          REM move %cd%\installer-inno\deepin-cooperation-* %cd%\installer-inno\%COO_PROJECT%\ > NUL
+          REM "%INNO_ROOT%\ISCC.exe" /Qp deepin-%DT_PROJECT%-setup.iss
+          REM move %cd%\installer-inno\deepin-datatransfer-* %cd%\installer-inno\%DT_PROJECT%\ > NUL
+          REM ==================================================================
+          
+          goto :eof
+          
+          REM ========================================
+          REM Subroutine: Prepare wxs file with actual paths
+          REM ========================================
+          :prepare_wxs
+          set TEMPLATE_WXS=%~1
+          set TEMP_DIR=%~2
+          set EXE_NAME=%~3
+          set VERSION=%~4
+          set ARCH=%~5
+          
+          REM Determine install directory based on architecture
+          if /i "%ARCH%"=="x64" (
+              set PROG_FILES=ProgramFiles64Folder
+          ) else (
+              set PROG_FILES=ProgramFilesFolder
+          )
+          
+          REM Read template and replace variables using PowerShell
+          powershell -Command "& { $content = Get-Content '%TEMPLATE_WXS%' -Raw; $content = $content -replace '@PRODUCT_VERSION@', '%VERSION%'; $content = $content -replace '@PROGRAM_FILES_FOLDER@', '%PROG_FILES%'; $content = $content -replace '@EXE_FILE@', '%TEMP_DIR%\%EXE_NAME%.exe'; $content = $content -replace '@EXE_NAME@', '%EXE_NAME%.exe'; $content = $content -replace '@INCLUDE_TRANSLATIONS@', ''; $content | Out-File -FilePath '%TEMP_DIR%\main.wxs' -Encoding UTF8 }"
+          if ERRORLEVEL 1 exit /b 1
+          
+          exit /b 0
 
       - name: Make Installer Archives
         run: |
-          # Archive all installers
-          if exist "build/_CPack_Packages" (
+          # Archive all MSI installers
+          if exist "build/_CPack_Packages" {
             New-Item -ItemType Directory -Force -Path build/installers
             Get-ChildItem -Path build/_CPack_Packages -Recurse -Filter *.msi | ForEach-Object {
               $dest = "build/installers/$($_.Name)"
@@ -125,9 +218,11 @@ jobs:
             }
             Compress-Archive -Path build/installers/* -DestinationPath build/installers-${{ matrix.msvc_arch }}.zip
           }
-          if exist "build/_CPack_Packages" (
-            Get-ChildItem -Path build/_CPack_Packages -Recurse -Filter *.7z | ForEach-Object {
-              Copy-Item $_.FullName -Destination build/
+          
+          # Legacy: Also archive any 7z files if they exist
+          if (Test-Path "build/*.7z") {
+            Get-ChildItem -Path build -Filter *.7z | ForEach-Object {
+              Write-Host "Found legacy 7z file: $($_.Name)"
             }
           }
 
@@ -137,7 +232,6 @@ jobs:
           name: windows-installers-${{ matrix.msvc_arch }}
           path: |
             build/*.zip
-            build/*.7z
           retention-days: 30
 
       - name: Create Release

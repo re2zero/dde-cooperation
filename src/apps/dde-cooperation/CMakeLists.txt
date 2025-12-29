@@ -46,12 +46,25 @@ if (WIN32)
 
     # 安装包制作inno脚本
     configure_file(${CMAKE_SOURCE_DIR}/dist/inno/setup.iss.in ${CMAKE_BINARY_DIR}/${PROJ_NAME}-setup.iss)
+    
+    # WiX 打包模板配置 - 在 CMake 配置时传入所有变量
+    # set(PRODUCT_NAME "Deepin Cooperation")
+    set(UPGRADE_CODE "A3AE65FC-2431-49AE-9A9C-87D3DBC2B7A4")
+    set(INSTALL_FOLDER "dde-cooperation")
+    set(EXE_NAME "${PROJ_NAME}.exe")
+    set(PRODUCT_VERSION ${APP_VERSION})
 
-    # WiX packaging using CPack (optional)
-    option(ENABLE_WIX "Enable WiX MSI packaging using CPack" ON)
-    if(ENABLE_WIX)
-        include(packaging/wix/cpack_config.cmake)
+    if(CMAKE_SIZEOF_VOID_P EQUAL 8)
+        # 64位构建，安装到 "Program Files"
+        set(PROGRAM_FILES_FOLDER "ProgramFiles64Folder")
+        message(STATUS "Configuring WiX for 64-bit installation into 'Program Files'")
+    else()
+        # 32位构建，安装到 "Program Files (x86)"
+        set(PROGRAM_FILES_FOLDER "ProgramFilesFolder")
+        message(STATUS "Configuring WiX for 32-bit installation into 'Program Files (x86)'")
     endif()
+
+    configure_file(${CMAKE_SOURCE_DIR}/dist/wix/main.wxs.in ${CMAKE_BINARY_DIR}/output/${PROJ_NAME}.wxs @ONLY)
 endif()
 
 if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)

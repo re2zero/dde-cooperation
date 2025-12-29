@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+
+  <Package 
+    Name="@PRODUCT_NAME@" 
+    Version="@PRODUCT_VERSION@" 
+    Manufacturer="Uniontech, Inc." 
+    UpgradeCode="@UPGRADE_CODE@"
+    Language="1033"
+    Codepage="1252">
+    
+    <SummaryInformation
+      Manufacturer="Uniontech, Inc."
+      Keywords="Installer,MSI,Database"
+      Description="@PRODUCT_NAME@ Installer"
+      />
+    
+    <MediaTemplate EmbedCab="yes" />
+    
+    <!-- Installation UI Strings -->
+    <Property Id="WIXUI_INSTALLDIR" Value="INSTALLFOLDER" />
+    <UIRef Id="WixUI_InstallDir" />
+
+    <!-- 添加许可协议文件的路径 -->
+    <!-- <Property Id="WixUILicenseRtf" Value="License.rtf" /> -->
+    <Property Id="ApplicationFolderName" Value="@PRODUCT_NAME@" />
+    <Property Id="WixAppFolder" Value="WixPerMachineFolder" />
+    <WixVariable Id="WixUILicenseRtf" Value="License.rtf" />
+    
+    <!-- <Icon Id="winicon.ico" SourceFile="..\icons\tony-winicon.ico"/>
+    <Property Id="ARPPRODUCTICON" Value="winicon.ico" />
+        
+    <WixVariable Id="WixUIBannerBmp" Value="..\deploy\win64\top.bmp"/>
+    <WixVariable Id="WixUIDialogBmp" Value="..\deploy\win64\main.bmp"/> -->
+    
+    <StandardDirectory Id="@PROGRAM_FILES_FOLDER@">
+        <Directory Id="INSTALLFOLDER" Name="@INSTALL_FOLDER@">
+            
+            <!-- Component 必须直接放在 Directory 下 -->
+            <Component Id="MainExecutable" Guid="@PRODUCT_ID@">
+                <File Id="ExeFile" Source="@EXE_NAME@" KeyPath="yes">
+                  <Shortcut 
+                    Id="DesktopShortcut" 
+                    Directory="DesktopFolder" 
+                    Name="@PRODUCT_NAME@" 
+                    Description="@PRODUCT_NAME@"
+                    Advertise="yes" />
+                  <Shortcut 
+                    Id="StartMenuShortcut" 
+                    Directory="ProgramMenuFolder" 
+                    Name="@PRODUCT_NAME@" 
+                    Description="@PRODUCT_NAME@"
+                    Advertise="yes" />
+                </File>
+                
+                <RemoveFolder Id="CleanupAppFolder" On="uninstall" Directory="INSTALLFOLDER" />
+                <RegistryValue 
+                  Root="HKCU" 
+                  Key="Software\Uniontech\@PROJ_NAME@" 
+                  Name="installed" 
+                  Type="integer" 
+                  Value="1" />
+            </Component>
+
+        </Directory>
+    </StandardDirectory>
+    
+    <!-- 其他标准目录也直接在此顶层定义 -->
+    <StandardDirectory Id="DesktopFolder" />
+    <StandardDirectory Id="ProgramMenuFolder" />
+
+    <!-- ======================================================= -->
+    <!-- 2. 组件组定义 -->
+    <!-- ======================================================= -->
+    <!-- ComponentGroup 在这里引用上面定义的 Component -->
+    <ComponentGroup Id="ProductComponents" Directory="INSTALLFOLDER">
+        <ComponentRef Id="MainExecutable" />
+        
+        <!-- 
+          你的注释 "This will be dynamically populated during build" 非常正确！
+          CMake 或 heat.exe 在生成其他文件的组件时，会在这里添加更多的 <ComponentRef Id="..." /> 
+          例如: <ComponentRef Id="SomeDllComponent" />
+        -->
+    </ComponentGroup>
+
+    <!-- ======================================================= -->
+    <!-- 3. 功能定义 -->
+    <!-- ======================================================= -->
+    <Feature Id="ProductFeature" Title="@PRODUCT_NAME@" Level="1">
+        <!-- 在 Feature 中引用整个 ComponentGroup -->
+        <ComponentGroupRef Id="ProductComponents" />
+    </Feature>
+    
+    <!-- Localization Strings -->
+    <!-- @INCLUDE_TRANSLATIONS@ -->
+    
+  </Package>
+</Wix>

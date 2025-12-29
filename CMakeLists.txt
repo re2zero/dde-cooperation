@@ -132,17 +132,8 @@ endif()
 add_subdirectory(src)
 
 # CPack configuration for Windows WiX packaging
+# NOTE: We don't use CPack for this multi-application project
+# WiX packaging is handled by wix_package.bat instead
 if(WIN32 AND ENABLE_WIX)
-    # Basic CPack settings
-    set(CPACK_PACKAGE_VENDOR "Uniontech, Inc.")
-    set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Deepin Cooperation and Data Transfer Tools")
-
-    # Find WiX tools
-    find_program(WIX_CANDLE_EXE candle PATHS "C:/Program Files/WiX Toolset v6.0/bin" "C:/Program Files (x86)/WiX Toolset v6.0/bin")
-    find_program(WIX_LIGHT_EXE light PATHS "C:/Program Files/WiX Toolset v6.0/bin" "C:/Program Files (x86)/WiX Toolset v6.0/bin")
-
-    if(WIX_CANDLE_EXE AND WIX_LIGHT_EXE)
-        message(STATUS "WiX Toolset found, enabling CPack WiX generator")
-        include(CPack)
-    endif()
+    message(STATUS "ENABLE_WIX=ON set, WiX packaging will be handled by wix_package.bat")
 endif()
