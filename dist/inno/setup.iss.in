@@ -8,7 +8,16 @@
 #define MyAppServiceName "Cooperation"
 #define MyAppServiceDesc "Deepin cooperation background processes."
 #define MyAppListenerDesc "Deepin cooperation Listener"
-#define RuntimeDepend "vc_redist.x64.exe"
+
+#if "@ARCH@" == "x64"
+    #define RuntimeDepend "vc_redist.x64.exe"
+    #define BonjourDepend "BonjourPSSetup.exe"
+    #define ArchitectureFlags "ArchitecturesInstallIn64BitMode=x64"
+#else
+    #define RuntimeDepend "vc_redist.x86.exe"
+    #define BonjourDepend "BonjourPSSetup.exe"
+    #define ArchitectureFlags "ArchitecturesAllowed=x86"
+#endif
 
 [Setup]
 AppId={{@PRODUCT_ID@}
@@ -24,7 +33,7 @@ DefaultGroupName={cm:CmAppName}
 DisableProgramGroupPage=yes
 LicenseFile=@CMAKE_SOURCE_DIR@/dist/License.rtf
 OutputDir=@CMAKE_BINARY_DIR@/installer-inno
-OutputBaseFilename={#MyAppName}-{#MyAppTextVersion}-setup
+OutputBaseFilename={#MyAppName}-{#MyAppTextVersion}-@ARCH@
 SetupIconFile=@CMAKE_CURRENT_SOURCE_DIR@/res/win/@PROJ_NAME@.ico
 VersionInfoProductTextVersion={#MyAppTextVersion}
 VersionInfoProductVersion={#MyAppVersion}
@@ -35,7 +44,7 @@ VersionInfoCopyright={#MyAppCopyright}
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern
-ArchitecturesInstallIn64BitMode=x64
+{#ArchitectureFlags}
 UninstallDisplayIcon={app}\{#MyAppExeName}
 UninstallDisplayName={cm:CmAppName}
 Uninstallable=yes

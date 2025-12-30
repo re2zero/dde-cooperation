@@ -21,11 +21,11 @@ procedure bonjour(minVersion: string);
 begin
 	if (not IsIA64()) then begin
 		if (not msiproductupgrade(GetString(bonjour_upgradecode, bonjour_upgradecode_x64, ''), minVersion)) then
-			AddProduct('Bonjour64.msi',
+			AddProduct('BonjourPSSetup.exe',
 				'/passive /norestart',
 				CustomMessage('bonjour_title' + GetArchitectureString()),
 				CustomMessage('bonjour_size' + GetArchitectureString()),
-				GetString(bonjour_url, bonjour_url_x64, ''),
+				'',  // Empty URL to prevent download - use local file only
 				false, false, false);
 	end;
 end;
