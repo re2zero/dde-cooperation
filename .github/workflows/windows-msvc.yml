@@ -13,30 +13,24 @@ jobs:
             os: windows-2022
             build_type: Release
             compiler_type: msvc2019_64
+            build_arch: x64
             msvc_arch: x64
             qt_arch: win64_msvc2019_64
             qt_version: 5.15.2
             qt_target: desktop
-            openssl_arch: x64
             openssl_root: C:\Program Files\OpenSSL-Win64
-            bonjour_file: BonjourPSSetup.exe
-            vcredist_file: vc_redist.x64.exe
-            artifact_suffix: win64
             cmake_gen: Visual Studio 17 2022
-            vcpkg_triplet: x64-windows
+            vcpkg_triplet: x64-windows-release
           - name: win32_msvc
             os: windows-2022
             build_type: Release
             compiler_type: msvc2019
+            build_arch: x86
             msvc_arch: Win32
             qt_arch: win32_msvc2019
             qt_version: 5.15.2
             qt_target: desktop
-            openssl_arch: x86
             openssl_root: C:\Program Files (x86)\OpenSSL-Win32
-            bonjour_file: BonjourPSSetup.exe
-            vcredist_file: vc_redist.x86.exe
-            artifact_suffix: win32
             cmake_gen: Visual Studio 17 2022
             vcpkg_triplet: x86-windows
     runs-on: ${{ matrix.os }}
@@ -49,95 +43,57 @@ jobs:
       OPENSSL_CRYPTO_LIBRARY: ${{ matrix.openssl_root }}\lib
     steps:
       # Cache OpenSSL to speed up builds
-      - name: '⚙️ Cache OpenSSL'
-        id: cache-openssl
-        uses: actions/cache@v3
-        with:
-          path: ${{ matrix.openssl_root }}
-          key: Windows-OpenSSL-${{ matrix.openssl_arch }}-3.2.6
+      # - name: '⚙️ Cache OpenSSL'
+      #   id: cache-openssl
+      #   uses: actions/cache@v3
+      #   with:
+      #     path: ${{ matrix.openssl_root }}
+      #     key: Windows-OpenSSL-${{ matrix.build_arch }}-3.2.6
 
-      # Install OpenSSL 3.2.6 for both x86 and x64 architectures
-      - name: Install OpenSSL ${{ matrix.openssl_arch }}
-        if: steps.cache-openssl.outputs.cache-hit != 'true'
-        run: |
-          choco install openssl --version 3.2.6 --allow-downgrade -y
-        # shell: pwsh
-        # run: |
-        #   $arch = "${{ matrix.openssl_arch }}"
-        #   $version = "3_2_6"
-        #   $opensslUrl = if ($arch -eq "x64") {
-        #     "https://slproweb.com/download/Win64OpenSSL-${version}.msi"
-        #   } else {
-        #     "https://slproweb.com/download/Win32OpenSSL-${version}.msi"
-        #   }
-        #   $installerPath = "$env:TEMP\OpenSSL-${version}_${arch}.msi"
-        #   $installDir = "${{ matrix.openssl_root }}"
+      # # Install OpenSSL 3.2.6 for both x86 and x64 architectures
+      # - name: Install OpenSSL ${{ matrix.build_arch }}
+      #   shell: pwsh
+      #   run: |
+      #     $arch = "${{ matrix.build_arch }}"
+      #     $version = "3_2_6"
+      #     $opensslUrl = if ($arch -eq "x64") {
+      #       "https://slproweb.com/download/Win64OpenSSL-${version}.msi"
+      #     } else {
+      #       "https://slproweb.com/download/Win32OpenSSL-${version}.msi"
+      #     }
+      #     $installerPath = "$env:TEMP\OpenSSL-${version}_${arch}.msi"
+      #     $installDir = "${{ matrix.openssl_root }}"
+        
+      #     # 下载安装包
+      #     Invoke-WebRequest -Uri $opensslUrl -OutFile $installerPath
 
-        #   Write-Host "Downloading OpenSSL ${version} for ${arch}..."
-        #   Write-Host "URL: $opensslUrl"
-        #   Invoke-WebRequest -Uri $opensslUrl -OutFile $installerPath -UseBasicParsing
+      #     # 静默安装到指定目录并等待完成
+      #     Start-Process msiexec.exe -ArgumentList "/i $installerPath /quiet /qn INSTALLDIR=$installDir"
 
-        #   Write-Host "Downloaded file size: $(Get-Item $installerPath).Length bytes"
-
-        #   Write-Host "Installing OpenSSL ${version} for ${arch}..."
-        #   Write-Host "Target directory: $installDir"
-
-        #   # Create target directory if it doesn't exist
-        #   if (-not (Test-Path $installDir)) {
-        #     New-Item -ItemType Directory -Path $installDir -Force | Out-Null
-        #     Write-Host "Created directory: $installDir"
-        #   }
-
-        #   $installArgs = @(
-        #     "/i",
-        #     "`"$installerPath`"",
-        #     "/quiet",
-        #     "INSTALLDIR=`"$installDir`"",
-        #     "/norestart",
-        #     "/L*v",  # Enable verbose logging
-        #     "`"$env:TEMP\openssl_install.log`""
-        #   )
-
-        #   Write-Host "Running: msiexec $($installArgs -join ' ')"
-        #   $process = Start-Process msiexec -ArgumentList $installArgs -Wait -PassThru
-
-        #   Write-Host "MSI install exit code: $($process.ExitCode)"
-
-        #   # Wait for installation to complete
-        #   Start-Sleep -Seconds 5
-
-        #   # Check if installation succeeded
-        #   $opensslExe = "$installDir\bin\openssl.exe"
-        #   Write-Host "Checking for OpenSSL at: $opensslExe"
-
-        #   if (Test-Path $opensslExe) {
-        #     Write-Host "✓ OpenSSL installed successfully"
-        #     & $opensslExe version
-        #   } else {
-        #     Write-Host "✗ OpenSSL not found at expected location"
-        #     Write-Host "Listing install directory contents:"
-        #     Get-ChildItem -Path $installDir -Recurse -ErrorAction SilentlyContinue | Select-Object -First 20 FullName
-        #     Write-Host "Install log (last 50 lines):"
-        #     Get-Content "$env:TEMP\openssl_install.log" -Tail 50 -ErrorAction SilentlyContinue
-        #     exit 1
-        #   }
-
-        #   Write-Host "OpenSSL ${version} (${arch}) installation completed"
+      #     # 等待安装完全完成
+      #     Start-Sleep -Seconds 10
+          
+      # - name: Verify OpenSSL installation
+      #   run: |
+      #     openssl version
+      #     echo "OPENSSL_ROOT_DIR is: $env:OPENSSL_ROOT_DIR"
 
 
-      - name: Verify OpenSSL cached
-        if: steps.cache-openssl.outputs.cache-hit == 'true'
-        shell: pwsh
-        run: |
-          Write-Host "Using cached OpenSSL:"
-          & "${{ matrix.openssl_root }}\bin\openssl.exe" version
+      # - name: Verify OpenSSL cached
+      #   if: steps.cache-openssl.outputs.cache-hit == 'true'
+      #   shell: pwsh
+      #   run: |
+      #     Write-Host "Using cached OpenSSL:"
+      #     & "${{ matrix.openssl_root }}\bin\openssl.exe" version
 
       - name: '⚙️ Cache Qt'
         id: cache-qt
         uses: actions/cache@v3
         with:
-          path: ..\Qt
-          key: Windows-QtCache-${{ env.QT_VERSION }}
+          path: ${{ env.HOME }}/Qt
+          key: Windows-${{ matrix.os }}-Qt-${{ env.QT_VERSION }}-${{ matrix.qt_arch }}
+          restore-keys: |
+            Windows-${{ matrix.os }}-Qt-${{ env.QT_VERSION }}-
 
       - name: Install Qt ${{ env.QT_VERSION }}
         uses: jurplel/install-qt-action@v3
@@ -147,27 +103,7 @@ jobs:
           target: ${{ matrix.qt_target }}
           arch: ${{ matrix.qt_arch }}
           # modules: 'qt5compat'
-          # cached: 'false'
           cached: ${{ steps.cache-qt.outputs.cache-hit }}
-
-      - name: '⚙️ Cache vcpkg'
-        id: cache-vcpkg
-        uses: actions/cache@v3
-        with:
-          path: |
-            ${{ github.workspace }}/vcpkg
-            ~/.vcpkg
-          key: Windows-vcpkg-${{ matrix.vcpkg_triplet }}-${{ hashFiles('**/vcpkg.json') }}
-          restore-keys: |
-            Windows-vcpkg-${{ matrix.vcpkg_triplet }}-
-
-      - name: Install vcpkg
-        if: steps.cache-vcpkg.outputs.cache-hit != 'true'
-        shell: pwsh
-        run: |
-          git clone https://github.com/Microsoft/vcpkg.git
-          .\vcpkg\bootstrap-vcpkg.bat -disableMetrics
-          echo "VCPKG_INSTALLED_DIR=$env:GITHUB_WORKSPACE\vcpkg" >> $env:GITHUB_ENV
 
       # Use CMake 3.31.x for better OpenSSL 3.x compatibility while supporting VS 2019
       - name: Setup cmake
@@ -182,14 +118,23 @@ jobs:
           path: source
           fetch-depth: 0
 
+      - name: Build and cache vcpkg
+        id: vcpkg
+        uses: johnwason/vcpkg-action@v7
+        with:
+          pkgs: zlib openssl
+          # manifest-dir: ${{ github.workspace }}\source
+          extra-args: --classic --host-triplet=${{matrix.vcpkg_triplet}}
+          triplet: ${{matrix.vcpkg_triplet}}
+          token: ${{ github.token }}
+          revision: master
+
       - name: msvc-build
         id: build
         shell: cmd
         env:
+          build_arch: ${{ matrix.build_arch }}
           vc_arch: ${{ matrix.msvc_arch }}
-          openssl_arch: ${{ matrix.openssl_arch }}
-          bonjour_file: ${{ matrix.bonjour_file }}
-          vcredist_file: ${{ matrix.vcredist_file }}
           cmake_gen: ${{ matrix.cmake_gen }}
           COO_PROJECT: dde-cooperation
           DT_PROJECT: data-transfer
@@ -202,7 +147,7 @@ jobs:
             exit /b 1
           )
           echo Using Visual Studio 2022 at: %VS2022_PATH%
-          call "%VS2022_PATH%\VC\Auxiliary\Build\vcvarsall.bat" %vc_arch%
+          call "%VS2022_PATH%\VC\Auxiliary\Build\vcvarsall.bat" %build_arch%
           
           REM Initialize OpenSSL environment (based on start.bat logic)
           echo ============== OpenSSL Initialization ==============
@@ -234,28 +179,26 @@ jobs:
           echo Using vcpkg triplet: ${{ matrix.vcpkg_triplet }}
           echo Vcpkg toolchain file: %GITHUB_WORKSPACE%\vcpkg\scripts\buildsystems\vcpkg.cmake
 
-          if exist "%GITHUB_WORKSPACE%\source\CMakeLists.txt" (
-            echo Found CMakeLists.txt in source directory
-            cmake -G "%cmake_gen%" -A %vc_arch% -D CMAKE_BUILD_TYPE=%BUILD_TYPE% ^
-              -D CMAKE_TOOLCHAIN_FILE="%GITHUB_WORKSPACE%\vcpkg\scripts\buildsystems\vcpkg.cmake" ^
-              -D VCPKG_TARGET_TRIPLET=${{ matrix.vcpkg_triplet }} ^
-              -D APP_VERSION="${{ github.ref_name }}" "%GITHUB_WORKSPACE%\source"
-          ) else (
-            echo ERROR: CMakeLists.txt not found in source directory
-            dir "%GITHUB_WORKSPACE%\source"
-            exit /b 1
-          )
+          cmake -G "%cmake_gen%" -A %vc_arch% -D CMAKE_BUILD_TYPE=%BUILD_TYPE% ^
+            -D CMAKE_TOOLCHAIN_FILE="%GITHUB_WORKSPACE%\vcpkg\scripts\buildsystems\vcpkg.cmake" ^
+            -D VCPKG_TARGET_TRIPLET=${{ matrix.vcpkg_triplet }} ^
+            -D APP_VERSION="${{ github.ref_name }}" "%GITHUB_WORKSPACE%\source"
+
           cmake --build . --config %BUILD_TYPE%
 
           echo ------------copy files to output directory------------
 
           REM Set architecture-specific file names
-          if "%openssl_arch%"=="x86" (
+          if "%build_arch%"=="x86" (
               set OPENSSL_CRYPTO=libcrypto-3.dll
               set OPENSSL_SSL=libssl-3.dll
+              set BONJOUR_FILE=BonjourPSSetup.exe
+              set VCREDIST_FILE=vc_redist.x86.exe
           ) else (
               set OPENSSL_CRYPTO=libcrypto-3-x64.dll
               set OPENSSL_SSL=libssl-3-x64.dll
+              set BONJOUR_FILE=BonjourPSSetup.exe
+              set VCREDIST_FILE=vc_redist.x64.exe
           )
 
           if exist output\%BUILD_TYPE% (
@@ -266,14 +209,14 @@ jobs:
               copy "%OPENSSL_ROOT_DIR%\%OPENSSL_SSL%" output\%COO_PROJECT%\%BUILD_TYPE%\ > NUL
 
               mkdir installer-inno\%COO_PROJECT%
-              copy "%BONJOUR_SDK%\%bonjour_file%" installer-inno\%COO_PROJECT%\ > NUL
+              copy "%BONJOUR_SDK%\%BONJOUR_FILE%" installer-inno\%COO_PROJECT%\ > NUL
               REM Copy VC Redist from dependencies directory if it exists there
-              if exist "%BONJOUR_SDK%\%vcredist_file%" (
-                  copy "%BONJOUR_SDK%\%vcredist_file%" installer-inno\%COO_PROJECT%\ > NUL
+              if exist "%BONJOUR_SDK%\%VCREDIST_FILE%" (
+                  copy "%BONJOUR_SDK%\%VCREDIST_FILE%" installer-inno\%COO_PROJECT%\ > NUL
               )
               REM If VC Redist was copied to output directory, move it
-              if exist output\%COO_PROJECT%\%BUILD_TYPE%\%vcredist_file% (
-                  move output\%COO_PROJECT%\%BUILD_TYPE%\%vcredist_file% installer-inno\%COO_PROJECT%\ > NUL
+              if exist output\%COO_PROJECT%\%BUILD_TYPE%\%VCREDIST_FILE% (
+                  move output\%COO_PROJECT%\%BUILD_TYPE%\%VCREDIST_FILE% installer-inno\%COO_PROJECT%\ > NUL
               )
 
               copy output\%BUILD_TYPE%\quazip* output\%DT_PROJECT%\%BUILD_TYPE%\ > NUL
@@ -281,14 +224,14 @@ jobs:
               copy "%OPENSSL_ROOT_DIR%\%OPENSSL_CRYPTO%" output\%DT_PROJECT%\%BUILD_TYPE%\ > NUL
               copy "%OPENSSL_ROOT_DIR%\%OPENSSL_SSL%" output\%DT_PROJECT%\%BUILD_TYPE%\ > NUL
               mkdir installer-inno\%DT_PROJECT%
-              copy "%BONJOUR_SDK%\%bonjour_file%" installer-inno\%DT_PROJECT%\ > NUL
+              copy "%BONJOUR_SDK%\%BONJOUR_FILE%" installer-inno\%DT_PROJECT%\ > NUL
               REM Copy VC Redist from dependencies directory if it exists there
-              if exist "%BONJOUR_SDK%\%vcredist_file%" (
-                  copy "%BONJOUR_SDK%\%vcredist_file%" installer-inno\%DT_PROJECT%\ > NUL
+              if exist "%BONJOUR_SDK%\%VCREDIST_FILE%" (
+                  copy "%BONJOUR_SDK%\%VCREDIST_FILE%" installer-inno\%DT_PROJECT%\ > NUL
               )
               REM If VC Redist was copied to output directory, move it
-              if exist output\%DT_PROJECT%\%BUILD_TYPE%\%vcredist_file% (
-                  move output\%DT_PROJECT%\%BUILD_TYPE%\%vcredist_file% installer-inno\%DT_PROJECT%\ > NUL
+              if exist output\%DT_PROJECT%\%BUILD_TYPE%\%VCREDIST_FILE% (
+                  move output\%DT_PROJECT%\%BUILD_TYPE%\%VCREDIST_FILE% installer-inno\%DT_PROJECT%\ > NUL
               )
           ) else (
               echo Remember to copy supporting binaries and configuration files!
@@ -307,11 +250,40 @@ jobs:
           filepath: build/dde-cooperation-setup.iss
 
       - name: Make Installer Directories
+        shell: pwsh
         run: |
-          move build/installer-inno/deepin-cooperation-* build/installer-inno/dde-cooperation/ > NUL
-          powershell -Command "Compress-Archive -Path build/installer-inno/dde-cooperation/* -DestinationPath build/installer-inno/dde-cooperation.zip"
-          move build/installer-inno/deepin-datatransfer-* build/installer-inno/data-transfer/ > NUL
-          powershell -Command "Compress-Archive -Path build/installer-inno/data-transfer/* -DestinationPath build/installer-inno/deepin-data-transfer.zip"
+          $archSuffix = "${{ matrix.build_arch }}"
+          $cooperationDir = "build/installer-inno/dde-cooperation"
+          $transferDir = "build/installer-inno/data-transfer"
+          $cooperationZip = "build/installer-inno/dde-cooperation-${archSuffix}.zip"
+          $transferZip = "build/installer-inno/deepin-data-transfer-${archSuffix}.zip"
+
+          # Move cooperation files
+          if (Test-Path "build/installer-inno/deepin-cooperation-*") {
+            Move-Item -Path "build/installer-inno/deepin-cooperation-*" -Destination $cooperationDir -Force
+            Write-Host "Moved cooperation files to: $cooperationDir"
+          }
+
+          # Move data-transfer files
+          if (Test-Path "build/installer-inno/deepin-datatransfer-*") {
+            Move-Item -Path "build/installer-inno/deepin-datatransfer-*" -Destination $transferDir -Force
+            Write-Host "Moved data-transfer files to: $transferDir"
+          }
+
+          # Create archives
+          if (Test-Path $cooperationDir) {
+            Compress-Archive -Path "$cooperationDir/*" -DestinationPath $cooperationZip -Force
+            Write-Host "Created: $cooperationZip"
+          }
+
+          if (Test-Path $transferDir) {
+            Compress-Archive -Path "$transferDir/*" -DestinationPath $transferZip -Force
+            Write-Host "Created: $transferZip"
+          }
+
+          # List created files
+          Write-Host "Installer archives:"
+          Get-ChildItem -Path "build/installer-inno/*.zip" | Select-Object Name, Length, LastWriteTime
 
       - name: Create Release
         uses: softprops/action-gh-release@v1

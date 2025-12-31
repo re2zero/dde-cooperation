@@ -16,7 +16,8 @@
 #else
     #define RuntimeDepend "vc_redist.x86.exe"
     #define BonjourDepend "BonjourPSSetup.exe"
-    #define ArchitectureFlags "ArchitecturesAllowed=x86"
+    ; x86 packages can install on both x86 and x64 systems (via WOW64)
+    #define ArchitectureFlags ""
 #endif
 
 [Setup]
