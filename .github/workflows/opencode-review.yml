@@ -1,0 +1,112 @@
+name: opencode-review
+
+on:
+  # issue_comment covers both issues and PR comments
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+
+jobs:
+  review:
+    # Only trigger in PRs (not issues), and require /review or /opencode trigger
+    if: |
+      (
+        github.event_name == 'issue_comment' &&
+        github.event.issue.pull_request &&
+        (
+          contains(github.event.comment.body, '/review') ||
+          contains(github.event.comment.body, '/opencode')
+        )
+      ) ||
+      (
+        github.event_name == 'pull_request_review_comment' &&
+        (
+          contains(github.event.comment.body, '/review') ||
+          contains(github.event.comment.body, '/opencode')
+        )
+      )
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # Change to 'write' to allow OpenCode to push commits
+      pull-requests: write # Required to post comments (kept as write for responses)
+      issues: read # Change to 'write' if you enable issue workflows later
+      actions: read # Required to read CI results on PRs
+      id-token: write # Required for OIDC token generation (OpenCode GitHub App)
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: anomalyco/opencode/github@latest
+        env:
+          # ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY }}
+          ZHIPU_BASE_URL: ${{ secrets.ZHIPU_BASE_URL }}
+        # with:
+        #   # model: anthropic/claude-sonnet-4-20250514
+        #   model: zai-coding-plan/glm-4.7
+        #   use_github_token: true
+        #   prompt: |
+        #     Review this pull request:
+        #     - Check for code quality issues
+        #     - Look for potential bugs
+        #     - Suggest improvements
+        with:
+          model: ${{ secrets.OPENCODE_PR_REVIEW_MODEL }}
+          share: false
+          agent: plan
+          prompt: |
+            你是一位严格的代码安全审计员。请对代码变更进行审查。
+
+            【审查原则 - 去噪模式】：
+            - **只报告高风险问题**：例如导致崩溃、安全漏洞、数据丢失、构建失败、严重的逻辑错误。
+            - **忽略以下问题**：代码风格、变量命名、微小的性能优化、非确定性的潜在问题。
+            - 如果不确定，不要报告。
+            - 如果没有高风险问题，请回复："No critical risks found."
+
+            【输出格式要求】：
+
+            第一部分：具体风险建议（供人阅读）
+            针对每一个高风险问题，请按以下格式输出：
+            suggestion (bug_risk): [一句话概括核心问题]
+            [简短解释原因]
+            Suggested implementation:
+            ```[语言]
+            [修复代码片段]
+            ```
+
+            第二部分：AI 修复指令汇总（供 AI Agent 使用）
+            请严格遵循以下格式生成 "Prompt for AI Agents" 部分。
+            **特别注意**：为了防止 Markdown 嵌套导致截断，在 XML 标签内部展示代码时，**严禁使用三重反引号 (\`\`\`)**，请使用 **4个空格缩进** 来代替代码块标记。
+
+            Prompt for AI Agents:
+            ```markdown
+            Please address the comments from this code review:
+
+            ## Overall Comments
+            [在此处填写通用性总结。重点说明：本次审查旨在解决什么核心风险？修复这些问题的最终目标是什么？（例如：确保系统升级的稳定性、消除潜在的崩溃隐患等）。若无明显整体风险，请写 "No overall comments."]
+
+            ## Individual Comments
+
+            ### Comment [序号]
+            <location> `[文件路径]:[起始行]-[结束行]` </location>
+            <code_context>
+            [粘贴该位置有问题的原始代码上下文]
+            </code_context>
+
+            <issue_to_address>
+            **suggestion (bug_risk):** [问题标题]
+
+            [详细原因说明]
+
+            Suggested implementation:
+
+                [注意：此处代码应使用 4 个空格缩进，不要使用 ``` 符号，否则会被截断]
+                [例如：]
+                Package: dde-cooperation
+                Architecture: any
+                Breaks: old-package
+            </issue_to_address>
+            ```
+
+            开始审查：
