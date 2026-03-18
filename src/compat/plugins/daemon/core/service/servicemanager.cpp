@@ -121,7 +121,7 @@ fastring ServiceManager::genPeerInfo()
         { "nickname", nick },
         { "username", Util::getUsername() },
         { "hostname", Util::getHostname() },
-        { "ipv4", Util::getFirstIp() },
+        { "ipv4", _selectedIp.empty() ? Util::getFirstIp() : _selectedIp },
         { "share_connect_ip", "" },
         { "port", UNI_RPC_PORT_BASE },
         { "os_type", Util::getOSType() },
@@ -129,6 +129,25 @@ fastring ServiceManager::genPeerInfo()
     };
 
     return info.str();
+}
+
+void ServiceManager::restartDiscoveryServices(const QString &newIp)
+{
+    DLOG << "Restarting discovery services with IP:" << newIp.toStdString();
+
+    DiscoveryJob::instance()->stopAnnouncer();
+    DiscoveryJob::instance()->stopDiscoverer();
+
+    _selectedIp = newIp.toStdString();
+
+    fastring baseinfo = genPeerInfo();
+
+    QUNIGO([this, baseinfo]() {
+        DiscoveryJob::instance()->discovererRun();
+        DiscoveryJob::instance()->announcerRun(baseinfo);
+    });
+
+    DLOG << "Discovery services restarted successfully";
 }
 
 void ServiceManager::asyncDiscovery()

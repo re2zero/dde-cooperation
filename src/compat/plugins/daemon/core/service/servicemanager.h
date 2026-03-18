@@ -8,6 +8,7 @@
 #include <QObject>
 #include <QSharedPointer>
 #include <QTimer>
+#include <string>
 
 #include "co/co.h"
 #include "co/json.h"
@@ -29,6 +30,8 @@ public:
 public slots:
     void handleAppQuit();
 
+    void restartDiscoveryServices(const QString &newIp);
+
 private:
     QString ipcName();
     void localIPCStart();
@@ -39,6 +42,7 @@ private:
     HandleRpcService *_rpcService { nullptr };
     QSharedPointer<HandleSendResultService> _logic;
     QTimer _userTimer;
+    std::string _selectedIp;
 };
 
 #endif // SERVICEMANAGER_H
