@@ -5,6 +5,7 @@
 #include "servicemanager.h"
 #include "discoveryjob.h"
 #include "service/ipc/handleipcservice.h"
+#include <QPointer>
 #include "service/rpc/handlerpcservice.h"
 #include "service/ipc/sendipcservice.h"
 #include "service/rpc/sendrpcservice.h"
@@ -63,10 +64,23 @@ ServiceManager::ServiceManager(QObject *parent) : QObject(parent)
 #endif
 
     connect(qApp, &QCoreApplication::aboutToQuit, this, &ServiceManager::handleAppQuit);
+    setInstance(this);
 }
 
 ServiceManager::~ServiceManager()
 {
+}
+
+ServiceManager *ServiceManager::_instance = nullptr;
+
+ServiceManager *ServiceManager::instance()
+{
+    return _instance;
+}
+
+void ServiceManager::setInstance(ServiceManager *instance)
+{
+    _instance = instance;
 }
 
 void ServiceManager::startRemoteServer()

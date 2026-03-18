@@ -27,6 +27,10 @@ public:
 
     void startRemoteServer();
 
+    static ServiceManager *instance();
+
+    static void setInstance(ServiceManager *instance);
+
 public slots:
     void handleAppQuit();
 
@@ -43,6 +47,7 @@ private:
     QSharedPointer<HandleSendResultService> _logic;
     QTimer _userTimer;
     std::string _selectedIp;
+    static ServiceManager *_instance;
 };
 
 #endif // SERVICEMANAGER_H
