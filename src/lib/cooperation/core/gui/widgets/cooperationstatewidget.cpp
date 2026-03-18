@@ -491,52 +491,6 @@ void BottomLabel::initUI()
 
     updateIpList();
 
-#ifdef linux
-    updateSizeMode();
-    connect(CooperationGuiHelper::instance(), &CooperationGuiHelper::themeTypeChanged, this, &BottomLabel::updateSizeMode);
-#    ifdef DTKWIDGET_CLASS_DSizeMode
-    connect(DGuiApplicationHelper::instance(), &DGuiApplicationHelper::sizeModeChanged, this, &BottomLabel::updateSizeMode);
-#    endif
-#else
-    tipLabel->setPixmap(QIcon(":/icons/deepin/builtin/light/icons/icon_tips_128px.svg").pixmap(24, 24));
-    dialog->setWindowFlags(dialog->windowFlags() & ~Qt::WindowContextHelpButtonHint);
-    dialog->setStyleSheet("background-color: white;"
-                          "border-radius: 10px;}"
-                          "QScrollBar:vertical {"
-                          "width: 0px;"
-                          "}");
-    scrollArea->setStyleSheet("QScrollArea { border: none; background-color: transparent; }");
-#endif
-
-    dialog->setFixedSize(260, 208);
-    scrollArea->setWidgetResizable(true);
-    QWidget *ipDialogContentWidget = new QWidget;
-
-    QVBoxLayout *ipDialogLayout = new QVBoxLayout(ipDialogContentWidget);
-    ipDialogLayout->setAlignment(Qt::AlignTop);
-    ipDialogLayout->setContentsMargins(5, 6, 5, 0);
-
-    NoResultTipWidget *tipWidgt = new NoResultTipWidget(scrollArea, true);
-    NoResultTipWidget *mobileTipWidgt = new NoResultTipWidget(scrollArea, true, true);
-    stackedLayout = new QStackedLayout;
-    stackedLayout->addWidget(tipWidgt);
-    stackedLayout->addWidget(mobileTipWidgt);
-    stackedLayout->setCurrentIndex(0);
-    ipDialogLayout->addLayout(stackedLayout);
-
-    scrollArea->setWidget(ipDialogContentWidget);
-
-    QVBoxLayout *ipContentLayout = new QVBoxLayout;
-    ipContentLayout->setContentsMargins(0, 0, 0, 0);
-    ipContentLayout->addWidget(scrollArea);
-    ipContentLayout->setAlignment(Qt::AlignCenter);
-
-    dialog->setLayout(ipContentLayout);
-    dialog->setWindowFlags(Qt::ToolTip);
-
-    CooperationGuiHelper::setAutoFont(tipWidgt, 14, QFont::Normal);
-    CooperationGuiHelper::setAutoFont(tipWidgt, 12, QFont::Normal);
-
     QHBoxLayout *hLayout = new QHBoxLayout;
     hLayout->addSpacing(30);
     hLayout->setContentsMargins(0, 0, 0, 0);
@@ -570,6 +524,52 @@ void BottomLabel::initUI()
 
     updateIpList();
 }
+
+void BottomLabel::setIp(const QString &ip)
+{
+    DLOG << "Setting IP address to:" << ip.toStdString();
+    currentSelectedIp = ip;
+    ipValueLabel->setText(ip);
+
+    ipComboBox->blockSignals(true);
+    int index = ipComboBox->findText(ip);
+    if (index >= 0) {
+        ipComboBox->setCurrentIndex(index);
+    }
+    ipComboBox->blockSignals(false);
+}
+
+void BottomLabel::showIpDropdown()
+{
+    DLOG << "Showing IP dropdown";
+
+    if (comboBoxVisible) {
+        DLOG << "ComboBox already visible";
+        return;
+    }
+
+    ipComboBox->show();
+    ipComboBox->setMinimumWidth(ipValueLabel->width() + ipPrefixLabel->width() + 50);
+    ipComboBox->setMaximumHeight(200);
+    ipComboBox->showPopup();
+    comboBoxVisible = true;
+
+    connect(ipComboBox, qOverload<int>(&DComboBox::currentIndexChanged), this, [this](int) {
+        comboBoxVisible = false;
+        QTimer::singleShot(200, this, [this] {
+            ipComboBox->hide();
+        });
+    }, Qt::UniqueConnection);
+
+    connect(ipComboBox, &DComboBox::editTextChanged, this, [this](const QString &) {
+        comboBoxVisible = false;
+        QTimer::singleShot(200, this, [this] {
+            ipComboBox->hide();
+        });
+    }, Qt::UniqueConnection);
+}
+
+void BottomLabel::updateIpList()
 {
     DLOG << "Updating IP list in ComboBox";
     ipComboBox->clear();
