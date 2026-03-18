@@ -486,9 +486,10 @@ void BottomLabel::initUI()
     hLayout->addWidget(ipValueLabel);
     hLayout->addSpacing(5);
     hLayout->addWidget(ipArrowButton);
-    hLayout->addSpacing(5);
-    hLayout->addWidget(tipLabel);
     hLayout->addStretch();
+    tipLabel->setFixedWidth(30);
+    tipLabel->setAlignment(Qt::AlignRight);
+    hLayout->addWidget(tipLabel);
 
     QVBoxLayout *mainLayout = new QVBoxLayout;
     mainLayout->addLayout(hLayout);
@@ -524,20 +525,20 @@ void BottomLabel::showIpDropdown()
 
     DLOG << "Showing IP dropdown";
 
-    ipComboBox->showPopup();
     comboBoxVisible = true;
+    ipComboBox->setCurrentIndex(ipComboBox->findText(currentSelectedIp));
+    ipComboBox->show();
+    ipComboBox->setFocus();
 
-    auto hideComboBox = [this]() {
+    auto onSelectionMade = [this]() {
         comboBoxVisible = false;
         ipComboBox->hide();
     };
 
-    connect(ipComboBox, qOverload<int>(&DComboBox::currentIndexChanged), this, [this, hideComboBox](int) {
-        hideComboBox();
-    }, Qt::UniqueConnection);
-
-    connect(ipComboBox, &DComboBox::editTextChanged, this, [hideComboBox](const QString &) {
-        hideComboBox();
+    connect(ipComboBox, qOverload<int>(&DComboBox::currentIndexChanged), this, [this, onSelectionMade](int index) {
+        if (index >= 0) {
+            onSelectionMade();
+        }
     }, Qt::UniqueConnection);
 }
 
