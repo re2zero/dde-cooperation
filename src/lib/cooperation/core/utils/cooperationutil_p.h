@@ -27,6 +27,7 @@ public:
     CooperationUtil *q { nullptr };
     QSharedPointer<MainWindow> window { nullptr };
     bool isOnline { false };
+    QList<QPair<QString, QString>> lastKnownIps;
 };
 
 }

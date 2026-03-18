@@ -227,8 +227,33 @@ void CooperationUtil::initNetworkListener()
 void CooperationUtil::checkNetworkState()
 {
     DLOG << "Checking network state";
-    // 网络状态检测
-    bool isConnected = deepin_cross::CommonUitls::getFirstIp().size() > 0;
+
+    auto currentIps = getAllAvailableIps();
+    bool isConnected = !currentIps.isEmpty();
+
+    // Check for IP list changes
+    if (currentIps != d->lastKnownIps) {
+        DLOG << "IP list changed, old:" << d->lastKnownIps.size() 
+             << "new:" << currentIps.size();
+        d->lastKnownIps = currentIps;
+        Q_EMIT ipListChanged();
+    }
+
+    // Check if selected IP is still valid
+    QString selected = selectedIp();
+    bool selectedStillValid = false;
+    for (const auto &pair : currentIps) {
+        if (pair.first == selected) {
+            selectedStillValid = true;
+            break;
+        }
+    }
+
+    if (!selectedStillValid && !currentIps.isEmpty()) {
+        DLOG << "Selected IP no longer valid, auto-switching to:" << currentIps.first().first.toStdString();
+        setSelectedIp(currentIps.first().first);
+        Q_EMIT selectedIpChanged(currentIps.first().first);
+    }
 
     if (isConnected != d->isOnline) {
         DLOG << "Network state changed from" << d->isOnline << "to" << isConnected;
