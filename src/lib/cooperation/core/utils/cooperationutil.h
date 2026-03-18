@@ -36,11 +36,17 @@ public:
 
     static QVariantMap deviceInfo();
     static QString localIPAddress();
-    static QString closeOption();
-    static void saveOption(bool exit);
 
-Q_SIGNALS:
+    static QList<QPair<QString, QString>> getAllAvailableIps();
+    static QString selectedIp();
+    static void setSelectedIp(const QString &ip);
+    static void saveOption(bool exit);
+    static QString closeOption();
+
+    Q_SIGNALS:
     void onlineStateChanged(const QString &validIP);
+    void ipListChanged();
+    void selectedIpChanged(const QString &ip);
     void storageConfig(const QString &value);
 
 private:

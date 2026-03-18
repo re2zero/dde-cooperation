@@ -178,6 +178,29 @@ QString CooperationUtil::localIPAddress()
     return ip;
 }
 
+QList<QPair<QString, QString>> CooperationUtil::getAllAvailableIps()
+{
+    QList<QPair<QString, QString>> result;
+    auto ips = deepin_cross::CommonUitls::getAllAvailableIps();
+    for (const auto& info : ips) {
+        result.append(qMakePair(
+            QString::fromStdString(info.ip),
+            QString::fromStdString(info.interfaceName)
+        ));
+    }
+    return result;
+}
+
+QString CooperationUtil::selectedIp()
+{
+    return QString::fromStdString(deepin_cross::CommonUitls::getSelectedIp());
+}
+
+void CooperationUtil::setSelectedIp(const QString &ip)
+{
+    deepin_cross::CommonUitls::setSelectedIp(ip.toStdString());
+}
+
 QString CooperationUtil::closeOption()
 {
     QString option = ConfigManager::instance()->appAttribute(AppSettings::CacheGroup, AppSettings::CloseOptionKey).toString();
