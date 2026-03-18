@@ -41,6 +41,8 @@ public slots:
     void handleAddJob(const QString appName, const int jobId);
     void handleRemoveJob(const QString appName, const int jobId);
 
+    void notifyIpChanged(const QString &newIp);
+
     //缓存远端离线消息，可能因某次失败而触发，若3秒内有正常则应取消此消息到前端
     void preprocessOfflineStatus(const QString appName, int32 type, const fastring msg);
     void cancelOfflineStatus(const QString appName);

@@ -217,3 +217,11 @@ void SendIpcService::handleNodeChanged(bool found, QString info)
         }
     }
 }
+
+void SendIpcService::notifyIpChanged(const QString &newIp)
+{
+    DLOG << "Notifying daemon of IP change to:" << newIp.toStdString();
+    co::Json json;
+    json.add_member("ip", newIp.toStdString());
+    handleSendToClient("dde-cooperation", IP_CHANGED, json.str().c_str());
+}
