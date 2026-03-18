@@ -6,9 +6,17 @@
 #define COMMONUTILS_H
 
 #include <QString>
+#include <string>
+#include <vector>
 
 #include <co/flag.h>
 #include <co/log.h>
+
+struct NetworkInterfaceInfo {
+    std::string ip;           // IP address
+    std::string interfaceName; // Interface name (e.g., enp3s0)
+    int type;                  // 0=Ethernet, 1=WiFi
+};
 
 namespace deepin_cross {
 class CommonUitls
@@ -29,6 +37,10 @@ public:
     static bool isFirstStart();
 
     static QString tipConfPath();
+
+    static std::vector<NetworkInterfaceInfo> getAllAvailableIps();
+    static std::string getSelectedIp();
+    static void setSelectedIp(const std::string& ip);
 
 private:
     static QString logDir();

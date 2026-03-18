@@ -8,8 +8,17 @@
 #include "log.h"
 
 #include <QString>
+#include <string>
+#include <vector>
+
+struct NetworkInterfaceInfo {
+    std::string ip;           // IP address
+    std::string interfaceName; // Interface name (e.g., enp3s0)
+    int type;                  // 0=Ethernet, 1=WiFi
+};
 
 namespace deepin_cross {
+
 class CommonUitls
 {
 public:
@@ -32,6 +41,10 @@ public:
     static int getAvailablePort();
 
     static QString ipcServerName(const QString &appName);
+
+    static std::vector<NetworkInterfaceInfo> getAllAvailableIps();
+    static std::string getSelectedIp();
+    static void setSelectedIp(const std::string& ip);
 private:
     static QString logDir();
     static bool detailLog();

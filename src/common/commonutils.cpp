@@ -60,6 +60,39 @@ std::string CommonUitls::getFirstIp()
     return ip.toStdString();
 }
 
+std::vector<NetworkInterfaceInfo> CommonUitls::getAllAvailableIps()
+{
+    std::vector<NetworkInterfaceInfo> result;
+
+    foreach (QNetworkInterface netInterface, QNetworkInterface::allInterfaces()) {
+        if (!netInterface.flags().testFlag(QNetworkInterface::IsRunning)
+            || (netInterface.type() != QNetworkInterface::Ethernet
+                && netInterface.type() != QNetworkInterface::Wifi)) {
+            continue;
+        }
+
+        if (netInterface.name().startsWith("virbr") || netInterface.name().startsWith("vmnet")
+            || netInterface.name().startsWith("docker")) {
+            continue;
+        }
+
+        QList<QNetworkAddressEntry> entryList = netInterface.addressEntries();
+        foreach (QNetworkAddressEntry entry, entryList) {
+            if (entry.ip().protocol() == QAbstractSocket::IPv4Protocol
+                && entry.ip() != QHostAddress::LocalHost) {
+                NetworkInterfaceInfo info;
+                info.ip = entry.ip().toString().toStdString();
+                info.interfaceName = netInterface.name().toStdString();
+                info.type = (netInterface.type() == QNetworkInterface::Ethernet) ? 0 : 1;
+                result.push_back(info);
+            }
+        }
+    }
+
+    qInfo() << "Found" << result.size() << "available network interfaces";
+    return result;
+}
+
 void CommonUitls::loadTranslator()
 {
     qInfo() << "Loading translator for locale: " << QLocale::system().name();
@@ -322,4 +355,44 @@ QString CommonUitls::ipcServerName(const QString &appName)
         userKey = QString("%1/%2").arg(QStandardPaths::writableLocation(QStandardPaths::TempLocation), key);
     }
     return userKey;
+}
+
+static const char* kSelectedIpKey = "SelectedIPAddress";
+
+std::string CommonUitls::getSelectedIp()
+{
+    QString configPath = QString("%1/%2/%3/config.conf")
+        .arg(QStandardPaths::writableLocation(QStandardPaths::GenericCacheLocation))
+        .arg(qApp->organizationName())
+        .arg(qApp->applicationName());
+
+    QSettings settings(configPath, QSettings::IniFormat);
+    QString selectedIp = settings.value(kSelectedIpKey).toString();
+
+    if (selectedIp.isEmpty()) {
+        return getFirstIp();
+    }
+
+    auto allIps = getAllAvailableIps();
+    for (const auto& info : allIps) {
+        if (info.ip == selectedIp.toStdString()) {
+            return selectedIp.toStdString();
+        }
+    }
+
+    return getFirstIp();
+}
+
+void CommonUitls::setSelectedIp(const std::string& ip)
+{
+    QString configPath = QString("%1/%2/%3/config.conf")
+        .arg(QStandardPaths::writableLocation(QStandardPaths::GenericCacheLocation))
+        .arg(qApp->organizationName())
+        .arg(qApp->applicationName());
+
+    QSettings settings(configPath, QSettings::IniFormat);
+    settings.setValue(kSelectedIpKey, QString::fromStdString(ip));
+    settings.sync();
+
+    qInfo() << "Saved selected IP:" << ip.c_str();
 }
