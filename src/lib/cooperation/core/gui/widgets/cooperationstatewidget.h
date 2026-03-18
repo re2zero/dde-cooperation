@@ -95,6 +95,7 @@ protected:
 private slots:
     void updateSizeMode();
     void onIpChanged(int index);
+    void showIpDropdown();
 
 signals:
     void ipChanged(const QString &ip);
@@ -107,6 +108,9 @@ private:
     CooperationAbstractDialog *dialog { nullptr };
     QStackedLayout *stackedLayout { nullptr };
     QLabel *tipLabel { nullptr };
+    QLabel *ipPrefixLabel { nullptr };
+    QLabel *ipValueLabel { nullptr };
+    QPushButton *ipArrowButton { nullptr };
 #ifdef linux
     DTK_WIDGET_NAMESPACE::DComboBox *ipComboBox { nullptr };
 #else
@@ -114,6 +118,7 @@ private:
 #endif
     QString currentSelectedIp;
     QTimer *timer { nullptr };
+    bool comboBoxVisible { false };
 };
 
 }   // namespace cooperation_core

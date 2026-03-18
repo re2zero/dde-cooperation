@@ -25,6 +25,7 @@ DWIDGET_USE_NAMESPACE
 #include <QTimer>
 #include <QDesktopServices>
 #include <QToolButton>
+#include <QPushButton>
 #include <QScrollArea>
 #include <QMouseEvent>
 #include <QStackedLayout>
@@ -453,15 +454,103 @@ void BottomLabel::initUI()
     CooperationGuiHelper::setAutoFont(tipWidgt, 14, QFont::Normal);
     CooperationGuiHelper::setAutoFont(tipWidgt, 12, QFont::Normal);
 
-    QHBoxLayout *hLayout = new QHBoxLayout;
-    hLayout->addSpacing(30);
+    ipPrefixLabel = new QLabel(tr("Local IP: "), this);
+    ipPrefixLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    CooperationGuiHelper::setAutoFont(ipPrefixLabel, 12, QFont::Normal);
+
+    ipValueLabel = new QLabel("---", this);
+    ipValueLabel->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    CooperationGuiHelper::setAutoFont(ipValueLabel, 12, QFont::Normal);
+
+    ipArrowButton = new QPushButton(this);
+    ipArrowButton->setObjectName("IpArrowButton");
+    ipArrowButton->setFixedSize(20, 20);
+    ipArrowButton->setCursor(Qt::PointingHandCursor);
+    ipArrowButton->setStyleSheet(
+        "QPushButton#IpArrowButton {"
+        "  border: none;"
+        "  background: transparent;"
+        "  border-left: 1px solid rgba(0, 0, 0, 0.3);"
+        "}"
+        "QPushButton#IpArrowButton:hover {"
+        "  background: rgba(0, 0, 0, 0.1);"
+        "}"
+        "QPushButton#IpArrowButton::menu-indicator {"
+        "  image: url(:/icons/deepin/builtin/icons/arrow_down.svg);"
+        "  width: 10px;"
+        "  height: 10px;"
+        "}"
+    );
+    connect(ipArrowButton, &QPushButton::clicked, this, &BottomLabel::showIpDropdown);
 
     ipComboBox = new DComboBox(this);
-    ipComboBox->setMinimumWidth(180);
+    ipComboBox->setMinimumWidth(200);
     ipComboBox->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Preferred);
+    ipComboBox->hide();
     connect(ipComboBox, qOverload<int>(&DComboBox::currentIndexChanged), this, &BottomLabel::onIpChanged);
 
-    hLayout->addWidget(ipComboBox);
+    updateIpList();
+
+#ifdef linux
+    updateSizeMode();
+    connect(CooperationGuiHelper::instance(), &CooperationGuiHelper::themeTypeChanged, this, &BottomLabel::updateSizeMode);
+#    ifdef DTKWIDGET_CLASS_DSizeMode
+    connect(DGuiApplicationHelper::instance(), &DGuiApplicationHelper::sizeModeChanged, this, &BottomLabel::updateSizeMode);
+#    endif
+#else
+    tipLabel->setPixmap(QIcon(":/icons/deepin/builtin/light/icons/icon_tips_128px.svg").pixmap(24, 24));
+    dialog->setWindowFlags(dialog->windowFlags() & ~Qt::WindowContextHelpButtonHint);
+    dialog->setStyleSheet("background-color: white;"
+                          "border-radius: 10px;}"
+                          "QScrollBar:vertical {"
+                          "width: 0px;"
+                          "}");
+    scrollArea->setStyleSheet("QScrollArea { border: none; background-color: transparent; }");
+#endif
+
+    dialog->setFixedSize(260, 208);
+    scrollArea->setWidgetResizable(true);
+    QWidget *ipDialogContentWidget = new QWidget;
+
+    QVBoxLayout *ipDialogLayout = new QVBoxLayout(ipDialogContentWidget);
+    ipDialogLayout->setAlignment(Qt::AlignTop);
+    ipDialogLayout->setContentsMargins(5, 6, 5, 0);
+
+    NoResultTipWidget *tipWidgt = new NoResultTipWidget(scrollArea, true);
+    NoResultTipWidget *mobileTipWidgt = new NoResultTipWidget(scrollArea, true, true);
+    stackedLayout = new QStackedLayout;
+    stackedLayout->addWidget(tipWidgt);
+    stackedLayout->addWidget(mobileTipWidgt);
+    stackedLayout->setCurrentIndex(0);
+    ipDialogLayout->addLayout(stackedLayout);
+
+    scrollArea->setWidget(ipDialogContentWidget);
+
+    QVBoxLayout *ipContentLayout = new QVBoxLayout;
+    ipContentLayout->setContentsMargins(0, 0, 0, 0);
+    ipContentLayout->addWidget(scrollArea);
+    ipContentLayout->setAlignment(Qt::AlignCenter);
+
+    dialog->setLayout(ipContentLayout);
+    dialog->setWindowFlags(Qt::ToolTip);
+
+    CooperationGuiHelper::setAutoFont(tipWidgt, 14, QFont::Normal);
+    CooperationGuiHelper::setAutoFont(tipWidgt, 12, QFont::Normal);
+
+    QHBoxLayout *hLayout = new QHBoxLayout;
+    hLayout->addSpacing(30);
+    hLayout->setContentsMargins(0, 0, 0, 0);
+
+    QWidget *ipDisplayWidget = new QWidget;
+    QHBoxLayout *ipDisplayLayout = new QHBoxLayout(ipDisplayWidget);
+    ipDisplayLayout->setContentsMargins(0, 0, 0, 0);
+    ipDisplayLayout->addWidget(ipPrefixLabel);
+    ipDisplayLayout->addWidget(ipValueLabel);
+    ipDisplayLayout->addSpacing(10);
+
+    hLayout->addWidget(ipDisplayWidget);
+    hLayout->addStretch();
+    hLayout->addWidget(ipArrowButton);
     hLayout->addStretch();
     tipLabel->setFixedWidth(30);
     tipLabel->setAlignment(Qt::AlignRight);
@@ -474,22 +563,13 @@ void BottomLabel::initUI()
 
     timer = new QTimer(this);
     timer->setInterval(200);
+
     connect(timer, &QTimer::timeout, dialog, &QDialog::hide);
-    DLOG << "BottomLabel timer initialized";
-}
 
-void BottomLabel::setIp(const QString &ip)
-{
-    DLOG << "Setting IP address to:" << ip.toStdString();
-    currentSelectedIp = ip;
-    int index = ipComboBox->findText(ip);
-    if (index >= 0) {
-        ipComboBox->setCurrentIndex(index);
-    }
-    DLOG << "BottomLabel IP set to:" << ip.toStdString();
-}
+    connect(ipArrowButton, &QPushButton::clicked, this, &BottomLabel::showIpDropdown);
 
-void BottomLabel::updateIpList()
+    updateIpList();
+}
 {
     DLOG << "Updating IP list in ComboBox";
     ipComboBox->clear();
@@ -529,47 +609,49 @@ void BottomLabel::showSwitchConfirmDialog(const QString &newIp)
 {
     DLOG << "Showing IP switch confirmation dialog";
 
-    CooperationAbstractDialog *confirmDialog = new CooperationAbstractDialog(this);
-    confirmDialog->setFixedSize(300, 150);
-    confirmDialog->setWindowFlags(Qt::ToolTip);
+    CooperationAbstractDialog *ipSwitchDialog = new CooperationAbstractDialog(this);
+    ipSwitchDialog->setFixedSize(300, 150);
+    ipSwitchDialog->setWindowFlags(Qt::ToolTip);
 
-    QVBoxLayout *layout = new QVBoxLayout(confirmDialog);
-    layout->setContentsMargins(20, 20, 20, 20);
+    QVBoxLayout *ipSwitchLayout = new QVBoxLayout(ipSwitchDialog);
+    ipSwitchLayout->setContentsMargins(20, 20, 20, 20);
 
-    QLabel *titleLabel = new QLabel(tr("Switch Network Interface"), confirmDialog);
-    auto titleFont = titleLabel->font();
+    QLabel *ipSwitchTitleLabel = new QLabel(tr("Switch Network Interface"), ipSwitchDialog);
+    auto titleFont = ipSwitchTitleLabel->font();
     titleFont.setWeight(QFont::Medium);
-    titleLabel->setFont(titleFont);
+    ipSwitchTitleLabel->setFont(titleFont);
 
     QString message = tr("Do you want to switch to %1? This will restart discovery services.").arg(newIp);
-    QLabel *messageLabel = new QLabel(message, confirmDialog);
-    messageLabel->setWordWrap(true);
+    QLabel *ipSwitchMessageLabel = new QLabel(message, ipSwitchDialog);
+    ipSwitchMessageLabel->setWordWrap(true);
 
-    QHBoxLayout *buttonLayout = new QHBoxLayout;
-    buttonLayout->addStretch();
+    QHBoxLayout *ipSwitchButtonLayout = new QHBoxLayout;
+    ipSwitchButtonLayout->addStretch();
 
-    CooperationSuggestButton *cancelButton = new CooperationSuggestButton(tr("Cancel"), confirmDialog);
-    CooperationSuggestButton *confirmButton = new CooperationSuggestButton(tr("Switch"), confirmDialog);
+    CooperationSuggestButton *ipSwitchCancelButton = new CooperationSuggestButton(tr("Cancel"), ipSwitchDialog);
+    CooperationSuggestButton *ipSwitchConfirmButton = new CooperationSuggestButton(tr("Switch"), ipSwitchDialog);
 
-    connect(cancelButton, &CooperationSuggestButton::clicked, confirmDialog, &QDialog::reject);
-    connect(confirmButton, &CooperationSuggestButton::clicked, confirmDialog, [this, newIp, confirmDialog] {
+    connect(ipSwitchCancelButton, &CooperationSuggestButton::clicked, ipSwitchDialog, &QDialog::reject);
+    connect(ipSwitchConfirmButton, &CooperationSuggestButton::clicked, ipSwitchDialog, [this, newIp, ipSwitchDialog] {
         CooperationUtil::setSelectedIp(newIp);
         Q_EMIT ipChanged(newIp);
         currentSelectedIp = newIp;
-        confirmDialog->accept();
+        ipSwitchDialog->accept();
     });
 
-    buttonLayout->addWidget(cancelButton);
-    buttonLayout->addWidget(confirmButton);
+    ipSwitchButtonLayout->addWidget(ipSwitchCancelButton);
+    ipSwitchButtonLayout->addWidget(ipSwitchConfirmButton);
 
-    layout->addSpacing(10);
-    layout->addWidget(titleLabel);
-    layout->addSpacing(10);
-    layout->addWidget(messageLabel);
-    layout->addSpacing(20);
-    layout->addLayout(buttonLayout);
+    ipSwitchLayout->addSpacing(10);
+    ipSwitchLayout->addWidget(ipSwitchTitleLabel);
+    ipSwitchLayout->addSpacing(10);
+    ipSwitchLayout->addWidget(ipSwitchMessageLabel);
+    ipSwitchLayout->addSpacing(20);
+    ipSwitchLayout->addLayout(ipSwitchButtonLayout);
 
-    if (confirmDialog->exec() == QDialog::Accepted) {
+    ipSwitchDialog->setLayout(ipSwitchLayout);
+
+    if (ipSwitchDialog->exec() == QDialog::Accepted) {
         DLOG << "User confirmed IP switch to" << newIp.toStdString();
     } else {
         DLOG << "User cancelled IP switch";
