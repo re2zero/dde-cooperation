@@ -30,4 +30,7 @@ typedef enum job_status_t {
     JOB_TRANS_CANCELED = 13,
 } JobStatus;
 
+// IPC message types
+#define IP_CHANGED  1001
+
 #endif // CONSTANT_H
