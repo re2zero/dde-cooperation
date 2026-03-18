@@ -48,6 +48,8 @@ public:
     Q_INVOKABLE void updateCooperationStatus(int status);
     Q_INVOKABLE bool getCurrentCooperationStatus();
 
+    Q_INVOKABLE void handleIpChanged(const QString &newIp);
+
     Q_INVOKABLE void doAsyncSearch(const QString &targetip, const bool remove);
 
     Q_INVOKABLE void appExit();

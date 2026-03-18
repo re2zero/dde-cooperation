@@ -5,6 +5,7 @@
 #include "handleipcservice.h"
 #include "sendipcservice.h"
 #include "service/rpc/sendrpcservice.h"
+#include "service/servicemanager.h"
 #include "ipc/proto/chan.h"
 #include "ipc/proto/comstruct.h"
 #include "ipc/proto/backend.h"
@@ -557,4 +558,10 @@ bool HandleIpcService::getCurrentCooperationStatus()
     bool isCooperating = (currentStatus == CURRENT_STATUS_SHARE_START);
     DLOG << "Current cooperation status:" << currentStatus << "isCooperating:" << isCooperating;
     return isCooperating;
+}
+
+void HandleIpcService::handleIpChanged(const QString &newIp)
+{
+    DLOG << "Received IP_CHANGED, new IP:" << newIp.toStdString();
+    ServiceManager::instance()->restartDiscoveryServices(newIp);
 }
