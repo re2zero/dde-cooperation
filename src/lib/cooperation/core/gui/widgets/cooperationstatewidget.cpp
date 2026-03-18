@@ -466,21 +466,8 @@ void BottomLabel::initUI()
     ipArrowButton->setObjectName("IpArrowButton");
     ipArrowButton->setFixedSize(20, 20);
     ipArrowButton->setCursor(Qt::PointingHandCursor);
-    ipArrowButton->setStyleSheet(
-        "QPushButton#IpArrowButton {"
-        "  border: none;"
-        "  background: transparent;"
-        "  border-left: 1px solid rgba(0, 0, 0, 0.3);"
-        "}"
-        "QPushButton#IpArrowButton:hover {"
-        "  background: rgba(0, 0, 0, 0.1);"
-        "}"
-        "QPushButton#IpArrowButton::menu-indicator {"
-        "  image: url(:/icons/deepin/builtin/icons/arrow_down.svg);"
-        "  width: 10px;"
-        "  height: 10px;"
-        "}"
-    );
+    ipArrowButton->setIcon(QIcon::fromTheme("pan-down-symbolic"));
+    ipArrowButton->setFlat(true);
     connect(ipArrowButton, &QPushButton::clicked, this, &BottomLabel::showIpDropdown);
 
     ipComboBox = new DComboBox(this);
@@ -492,24 +479,16 @@ void BottomLabel::initUI()
     updateIpList();
 
     QHBoxLayout *hLayout = new QHBoxLayout;
-    hLayout->addSpacing(30);
-    hLayout->setContentsMargins(0, 0, 0, 0);
+    hLayout->setContentsMargins(10, 0, 10, 0);
 
-    QWidget *ipDisplayWidget = new QWidget;
-    QHBoxLayout *ipDisplayLayout = new QHBoxLayout(ipDisplayWidget);
-    ipDisplayLayout->setContentsMargins(0, 0, 0, 0);
-    ipDisplayLayout->addWidget(ipPrefixLabel);
-    ipDisplayLayout->addWidget(ipValueLabel);
-    ipDisplayLayout->addSpacing(10);
-
-    hLayout->addWidget(ipDisplayWidget);
     hLayout->addStretch();
+    hLayout->addWidget(ipPrefixLabel);
+    hLayout->addWidget(ipValueLabel);
+    hLayout->addSpacing(5);
     hLayout->addWidget(ipArrowButton);
-    hLayout->addStretch();
-    tipLabel->setFixedWidth(30);
-    tipLabel->setAlignment(Qt::AlignRight);
+    hLayout->addSpacing(5);
     hLayout->addWidget(tipLabel);
-    hLayout->setAlignment(Qt::AlignHCenter);
+    hLayout->addStretch();
 
     QVBoxLayout *mainLayout = new QVBoxLayout;
     mainLayout->addLayout(hLayout);
@@ -519,8 +498,6 @@ void BottomLabel::initUI()
     timer->setInterval(200);
 
     connect(timer, &QTimer::timeout, dialog, &QDialog::hide);
-
-    connect(ipArrowButton, &QPushButton::clicked, this, &BottomLabel::showIpDropdown);
 
     updateIpList();
 }
@@ -541,37 +518,33 @@ void BottomLabel::setIp(const QString &ip)
 
 void BottomLabel::showIpDropdown()
 {
-    DLOG << "Showing IP dropdown";
-
-    if (comboBoxVisible) {
-        DLOG << "ComboBox already visible";
+    if (!ipComboBox || comboBoxVisible) {
         return;
     }
 
-    ipComboBox->show();
-    ipComboBox->setMinimumWidth(ipValueLabel->width() + ipPrefixLabel->width() + 50);
-    ipComboBox->setMaximumHeight(200);
+    DLOG << "Showing IP dropdown";
+
     ipComboBox->showPopup();
     comboBoxVisible = true;
 
-    connect(ipComboBox, qOverload<int>(&DComboBox::currentIndexChanged), this, [this](int) {
+    auto hideComboBox = [this]() {
         comboBoxVisible = false;
-        QTimer::singleShot(200, this, [this] {
-            ipComboBox->hide();
-        });
+        ipComboBox->hide();
+    };
+
+    connect(ipComboBox, qOverload<int>(&DComboBox::currentIndexChanged), this, [this, hideComboBox](int) {
+        hideComboBox();
     }, Qt::UniqueConnection);
 
-    connect(ipComboBox, &DComboBox::editTextChanged, this, [this](const QString &) {
-        comboBoxVisible = false;
-        QTimer::singleShot(200, this, [this] {
-            ipComboBox->hide();
-        });
+    connect(ipComboBox, &DComboBox::editTextChanged, this, [hideComboBox](const QString &) {
+        hideComboBox();
     }, Qt::UniqueConnection);
 }
 
 void BottomLabel::updateIpList()
 {
     DLOG << "Updating IP list in ComboBox";
+    ipComboBox->blockSignals(true);
     ipComboBox->clear();
 
     auto ipList = CooperationUtil::getAllAvailableIps();
@@ -589,6 +562,7 @@ void BottomLabel::updateIpList()
         ipComboBox->setCurrentIndex(0);
         currentSelectedIp = ipComboBox->itemText(0);
     }
+    ipComboBox->blockSignals(false);
     DLOG << "IP list updated with" << ipComboBox->count() << "items, selected:" << currentSelectedIp.toStdString();
 }
 
