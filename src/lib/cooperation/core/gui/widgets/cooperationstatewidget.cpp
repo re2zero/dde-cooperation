@@ -6,6 +6,7 @@
 #include "backgroundwidget.h"
 #include "global_defines.h"
 #include "gui/utils/cooperationguihelper.h"
+#include "utils/cooperationutil.h"
 #include "net/helper/phonehelper.h"
 
 #ifdef linux
@@ -364,14 +365,6 @@ BottomLabel::BottomLabel(QWidget *parent)
     DLOG << "BottomLabel installed event filter";
 }
 
-void BottomLabel::setIp(const QString &ip)
-{
-    DLOG << "Setting IP address to:" << ip.toStdString();
-    QString iptext = QString(tr("Local IP: %1").arg(ip));
-    ipLabel->setText(iptext);
-    DLOG << "BottomLabel IP set to:" << ip.toStdString();
-}
-
 void BottomLabel::paintEvent(QPaintEvent *)
 {
     QPainter painter(this);
@@ -407,10 +400,6 @@ bool BottomLabel::eventFilter(QObject *obj, QEvent *event)
 void BottomLabel::initUI()
 {
     DLOG << "Initializing BottomLabel";
-    QString ip = QString(tr("Local IP: %1").arg("---"));
-    ipLabel = new QLabel(ip);
-    ipLabel->setAlignment(Qt::AlignHCenter | Qt::AlignVCenter);
-    CooperationGuiHelper::setAutoFont(ipLabel, 12, QFont::Normal);
 
     dialog = new CooperationAbstractDialog(this);
     QScrollArea *scrollArea = new QScrollArea(dialog);
@@ -465,11 +454,16 @@ void BottomLabel::initUI()
     CooperationGuiHelper::setAutoFont(tipWidgt, 12, QFont::Normal);
 
     QHBoxLayout *hLayout = new QHBoxLayout;
-    hLayout->addSpacing(30); // left fix width
+    hLayout->addSpacing(30);
+
+    ipComboBox = new DComboBox(this);
+    ipComboBox->setMinimumWidth(180);
+    ipComboBox->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Preferred);
+    connect(ipComboBox, qOverload<int>(&DComboBox::currentIndexChanged), this, &BottomLabel::onIpChanged);
+
+    hLayout->addWidget(ipComboBox);
     hLayout->addStretch();
-    hLayout->addWidget(ipLabel);
-    hLayout->addStretch();
-    tipLabel->setFixedWidth(30); // right fix width
+    tipLabel->setFixedWidth(30);
     tipLabel->setAlignment(Qt::AlignRight);
     hLayout->addWidget(tipLabel);
     hLayout->setAlignment(Qt::AlignHCenter);
@@ -482,6 +476,108 @@ void BottomLabel::initUI()
     timer->setInterval(200);
     connect(timer, &QTimer::timeout, dialog, &QDialog::hide);
     DLOG << "BottomLabel timer initialized";
+}
+
+void BottomLabel::setIp(const QString &ip)
+{
+    DLOG << "Setting IP address to:" << ip.toStdString();
+    currentSelectedIp = ip;
+    int index = ipComboBox->findText(ip);
+    if (index >= 0) {
+        ipComboBox->setCurrentIndex(index);
+    }
+    DLOG << "BottomLabel IP set to:" << ip.toStdString();
+}
+
+void BottomLabel::updateIpList()
+{
+    DLOG << "Updating IP list in ComboBox";
+    ipComboBox->clear();
+
+    auto ipList = CooperationUtil::getAllAvailableIps();
+    for (const auto &item : ipList) {
+        ipComboBox->addItem(item.first);
+        DLOG << "Added IP:" << item.first.toStdString() << "for interface:" << item.second.toStdString();
+    }
+
+    QString selectedIp = CooperationUtil::selectedIp();
+    int index = ipComboBox->findText(selectedIp);
+    if (index >= 0) {
+        ipComboBox->setCurrentIndex(index);
+        currentSelectedIp = selectedIp;
+    } else if (ipComboBox->count() > 0) {
+        ipComboBox->setCurrentIndex(0);
+        currentSelectedIp = ipComboBox->itemText(0);
+    }
+    DLOG << "IP list updated with" << ipComboBox->count() << "items, selected:" << currentSelectedIp.toStdString();
+}
+
+void BottomLabel::onIpChanged(int index)
+{
+    if (index < 0 || index >= ipComboBox->count()) {
+        return;
+    }
+
+    QString newIp = ipComboBox->itemText(index);
+    if (newIp != currentSelectedIp) {
+        DLOG << "IP selection changed from" << currentSelectedIp.toStdString() << "to" << newIp.toStdString();
+        showSwitchConfirmDialog(newIp);
+    }
+}
+
+void BottomLabel::showSwitchConfirmDialog(const QString &newIp)
+{
+    DLOG << "Showing IP switch confirmation dialog";
+
+    CooperationAbstractDialog *confirmDialog = new CooperationAbstractDialog(this);
+    confirmDialog->setFixedSize(300, 150);
+    confirmDialog->setWindowFlags(Qt::ToolTip);
+
+    QVBoxLayout *layout = new QVBoxLayout(confirmDialog);
+    layout->setContentsMargins(20, 20, 20, 20);
+
+    QLabel *titleLabel = new QLabel(tr("Switch Network Interface"), confirmDialog);
+    auto titleFont = titleLabel->font();
+    titleFont.setWeight(QFont::Medium);
+    titleLabel->setFont(titleFont);
+
+    QString message = tr("Do you want to switch to %1? This will restart discovery services.").arg(newIp);
+    QLabel *messageLabel = new QLabel(message, confirmDialog);
+    messageLabel->setWordWrap(true);
+
+    QHBoxLayout *buttonLayout = new QHBoxLayout;
+    buttonLayout->addStretch();
+
+    CooperationSuggestButton *cancelButton = new CooperationSuggestButton(tr("Cancel"), confirmDialog);
+    CooperationSuggestButton *confirmButton = new CooperationSuggestButton(tr("Switch"), confirmDialog);
+
+    connect(cancelButton, &CooperationSuggestButton::clicked, confirmDialog, &QDialog::reject);
+    connect(confirmButton, &CooperationSuggestButton::clicked, confirmDialog, [this, newIp, confirmDialog] {
+        CooperationUtil::setSelectedIp(newIp);
+        Q_EMIT ipChanged(newIp);
+        currentSelectedIp = newIp;
+        confirmDialog->accept();
+    });
+
+    buttonLayout->addWidget(cancelButton);
+    buttonLayout->addWidget(confirmButton);
+
+    layout->addSpacing(10);
+    layout->addWidget(titleLabel);
+    layout->addSpacing(10);
+    layout->addWidget(messageLabel);
+    layout->addSpacing(20);
+    layout->addLayout(buttonLayout);
+
+    if (confirmDialog->exec() == QDialog::Accepted) {
+        DLOG << "User confirmed IP switch to" << newIp.toStdString();
+    } else {
+        DLOG << "User cancelled IP switch";
+        int index = ipComboBox->findText(currentSelectedIp);
+        if (index >= 0) {
+            ipComboBox->setCurrentIndex(index);
+        }
+    }
 }
 
 void BottomLabel::showDialog() const

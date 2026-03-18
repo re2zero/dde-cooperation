@@ -9,6 +9,15 @@
 #include "backgroundwidget.h"
 #include "global_defines.h"
 
+#ifdef linux
+#    include <DPalette>
+#    include <DComboBox>
+#    include <DSizeMode>
+#else
+#    include <QPalette>
+#    include <QComboBox>
+#endif
+
 class QStackedLayout;
 namespace cooperation_core {
 
@@ -77,6 +86,7 @@ public:
     void setIp(const QString &ip);
     void showDialog() const;
     void onSwitchMode(int page);
+    void updateIpList();
 
 protected:
     void paintEvent(QPaintEvent *) override;
@@ -84,15 +94,25 @@ protected:
 
 private slots:
     void updateSizeMode();
+    void onIpChanged(int index);
+
+signals:
+    void ipChanged(const QString &ip);
 
 private:
     void initUI();
+    void showSwitchConfirmDialog(const QString &newIp);
 
 private:
     CooperationAbstractDialog *dialog { nullptr };
     QStackedLayout *stackedLayout { nullptr };
     QLabel *tipLabel { nullptr };
-    QLabel *ipLabel { nullptr };
+#ifdef linux
+    DTK_WIDGET_NAMESPACE::DComboBox *ipComboBox { nullptr };
+#else
+    QComboBox *ipComboBox { nullptr };
+#endif
+    QString currentSelectedIp;
     QTimer *timer { nullptr };
 };
 
