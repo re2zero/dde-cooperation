@@ -642,7 +642,7 @@ void BottomLabel::showSwitchConfirmDialog(const QString &newIp)
     connect(ipSwitchConfirmButton, &CooperationSuggestButton::clicked, ipSwitchDialog, [this, newIp, ipSwitchDialog] {
         CooperationUtil::setSelectedIp(newIp);
         Q_EMIT ipChanged(newIp);
-        currentSelectedIp = newIp;
+        setIp(newIp);
         ipSwitchDialog->accept();
     });
 
@@ -650,6 +650,8 @@ void BottomLabel::showSwitchConfirmDialog(const QString &newIp)
     ipSwitchButtonLayout->addWidget(ipSwitchCancelButton);
     ipSwitchButtonLayout->addWidget(ipSwitchConfirmButton);
     ipSwitchButtonLayout->addStretch();
+
+    ipSwitchConfirmButton->setFocus();
 
     ipSwitchLayout->addSpacing(15);
     ipSwitchLayout->addWidget(ipSwitchTitleLabel);
