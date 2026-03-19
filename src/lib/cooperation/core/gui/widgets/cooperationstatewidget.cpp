@@ -519,25 +519,24 @@ void BottomLabel::setIp(const QString &ip)
 
 void BottomLabel::showIpDropdown()
 {
-    if (!ipComboBox || comboBoxVisible) {
+    if (!ipComboBox || !ipArrowButton->isVisible() || comboBoxVisible) {
         return;
     }
 
     DLOG << "Showing IP dropdown";
 
     comboBoxVisible = true;
-    ipComboBox->setCurrentIndex(ipComboBox->findText(currentSelectedIp));
+    int currentIndex = ipComboBox->findText(currentSelectedIp);
+    if (currentIndex >= 0) {
+        ipComboBox->setCurrentIndex(currentIndex);
+    }
     ipComboBox->show();
     ipComboBox->setFocus();
 
-    auto onSelectionMade = [this]() {
-        comboBoxVisible = false;
-        ipComboBox->hide();
-    };
-
-    connect(ipComboBox, qOverload<int>(&DComboBox::currentIndexChanged), this, [this, onSelectionMade](int index) {
+    connect(ipComboBox, qOverload<int>(&DComboBox::currentIndexChanged), this, [this](int index) {
         if (index >= 0) {
-            onSelectionMade();
+            comboBoxVisible = false;
+            ipComboBox->hide();
         }
     }, Qt::UniqueConnection);
 }
@@ -564,7 +563,12 @@ void BottomLabel::updateIpList()
         currentSelectedIp = ipComboBox->itemText(0);
     }
     ipComboBox->blockSignals(false);
-    DLOG << "IP list updated with" << ipComboBox->count() << "items, selected:" << currentSelectedIp.toStdString();
+
+    bool hasMultipleNetworks = ipList.size() > 1;
+    ipArrowButton->setVisible(hasMultipleNetworks);
+
+    DLOG << "IP list updated with" << ipComboBox->count() << "items, selected:" << currentSelectedIp.toStdString()
+         << ", arrow visible:" << hasMultipleNetworks;
 }
 
 void BottomLabel::onIpChanged(int index)
