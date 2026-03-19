@@ -474,6 +474,7 @@ void BottomLabel::initUI()
     ipComboBox->setMinimumWidth(200);
     ipComboBox->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Preferred);
     ipComboBox->hide();
+    ipComboBox->setWindowFlags(Qt::Popup);
     connect(ipComboBox, qOverload<int>(&DComboBox::currentIndexChanged), this, &BottomLabel::onIpChanged);
 
     updateIpList();
@@ -523,7 +524,9 @@ void BottomLabel::showIpDropdown()
         return;
     }
 
-    DLOG << "Showing IP dropdown";
+    DLOG << "Showing IP dropdown, combo valid:" << (ipComboBox != nullptr) 
+         << ", arrow visible:" << ipArrowButton->isVisible() 
+         << ", combo visible:" << comboBoxVisible;
 
     comboBoxVisible = true;
     int currentIndex = ipComboBox->findText(currentSelectedIp);
@@ -535,7 +538,7 @@ void BottomLabel::showIpDropdown()
     ipComboBox->move(globalPos);
     ipComboBox->setFixedWidth(ipArrowButton->width() + ipValueLabel->width() + ipPrefixLabel->width() + 20);
     ipComboBox->setMaxVisibleItems(10);
-    ipComboBox->show();
+    ipComboBox->showPopup();
     ipComboBox->setFocus();
 
     connect(ipComboBox, qOverload<int>(&DComboBox::currentIndexChanged), this, &BottomLabel::onComboBoxItemSelected);
