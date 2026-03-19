@@ -96,6 +96,7 @@ private slots:
     void updateSizeMode();
     void onIpChanged(int index);
     void showIpDropdown();
+    void onComboBoxItemSelected(int index);
 
 signals:
     void ipChanged(const QString &ip);

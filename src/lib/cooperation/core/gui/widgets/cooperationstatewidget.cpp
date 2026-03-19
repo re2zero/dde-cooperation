@@ -533,12 +533,15 @@ void BottomLabel::showIpDropdown()
     ipComboBox->show();
     ipComboBox->setFocus();
 
-    connect(ipComboBox, qOverload<int>(&DComboBox::currentIndexChanged), this, [this](int index) {
-        if (index >= 0) {
-            comboBoxVisible = false;
-            ipComboBox->hide();
-        }
-    }, Qt::UniqueConnection);
+    connect(ipComboBox, qOverload<int>(&DComboBox::currentIndexChanged), this, &BottomLabel::onComboBoxItemSelected);
+}
+
+void BottomLabel::onComboBoxItemSelected(int index)
+{
+    if (index >= 0) {
+        comboBoxVisible = false;
+        ipComboBox->hide();
+    }
 }
 
 void BottomLabel::updateIpList()
