@@ -606,9 +606,10 @@ void BottomLabel::showSwitchConfirmDialog(const QString &newIp)
     DLOG << "Showing IP switch confirmation dialog";
 
     CooperationAbstractDialog *ipSwitchDialog = new CooperationAbstractDialog(this);
-    ipSwitchDialog->setFixedSize(380, 180);
+    ipSwitchDialog->setFixedSize(420, 220);
     ipSwitchDialog->setWindowModality(Qt::ApplicationModal);
     ipSwitchDialog->setWindowFlags(ipSwitchDialog->windowFlags() & ~Qt::WindowContextHelpButtonHint);
+    ipSwitchDialog->setModal(true);
 
     QVBoxLayout *ipSwitchLayout = new QVBoxLayout(ipSwitchDialog);
     ipSwitchLayout->setContentsMargins(20, 20, 20, 20);
@@ -617,13 +618,16 @@ void BottomLabel::showSwitchConfirmDialog(const QString &newIp)
     QLabel *ipSwitchTitleLabel = new QLabel(tr("Switch Network Interface"), ipSwitchDialog);
     auto titleFont = ipSwitchTitleLabel->font();
     titleFont.setWeight(QFont::Medium);
-    titleFont.setPointSize(13);
+    titleFont.setPointSize(14);
     ipSwitchTitleLabel->setFont(titleFont);
+    ipSwitchTitleLabel->setAlignment(Qt::AlignHCenter);
 
-    QString message = tr("Switching to %1 will restart network discovery. Continue?").arg(newIp);
+    QString message = tr("Switching to %1 will restart network discovery. "
+                         "The current connection may be interrupted. Continue?").arg(newIp);
     QLabel *ipSwitchMessageLabel = new QLabel(message, ipSwitchDialog);
     ipSwitchMessageLabel->setWordWrap(true);
-    ipSwitchMessageLabel->setAlignment(Qt::AlignHCenter);
+    ipSwitchMessageLabel->setAlignment(Qt::AlignHCenter | Qt::AlignTop);
+    ipSwitchMessageLabel->setMinimumHeight(60);
     CooperationGuiHelper::setAutoFont(ipSwitchMessageLabel, 12, QFont::Normal);
 
     QHBoxLayout *ipSwitchButtonLayout = new QHBoxLayout;
@@ -631,6 +635,8 @@ void BottomLabel::showSwitchConfirmDialog(const QString &newIp)
 
     CooperationSuggestButton *ipSwitchCancelButton = new CooperationSuggestButton(tr("Cancel"), ipSwitchDialog);
     CooperationSuggestButton *ipSwitchConfirmButton = new CooperationSuggestButton(tr("Switch"), ipSwitchDialog);
+    ipSwitchCancelButton->setMinimumSize(120, 36);
+    ipSwitchConfirmButton->setMinimumSize(120, 36);
 
     connect(ipSwitchCancelButton, &CooperationSuggestButton::clicked, ipSwitchDialog, &QDialog::reject);
     connect(ipSwitchConfirmButton, &CooperationSuggestButton::clicked, ipSwitchDialog, [this, newIp, ipSwitchDialog] {
@@ -645,12 +651,13 @@ void BottomLabel::showSwitchConfirmDialog(const QString &newIp)
     ipSwitchButtonLayout->addWidget(ipSwitchConfirmButton);
     ipSwitchButtonLayout->addStretch();
 
-    ipSwitchLayout->addSpacing(10);
-    ipSwitchLayout->addWidget(ipSwitchTitleLabel);
-    ipSwitchLayout->addSpacing(5);
-    ipSwitchLayout->addWidget(ipSwitchMessageLabel);
     ipSwitchLayout->addSpacing(15);
+    ipSwitchLayout->addWidget(ipSwitchTitleLabel);
+    ipSwitchLayout->addSpacing(10);
+    ipSwitchLayout->addWidget(ipSwitchMessageLabel);
+    ipSwitchLayout->addSpacing(20);
     ipSwitchLayout->addLayout(ipSwitchButtonLayout);
+    ipSwitchLayout->addSpacing(10);
 
     ipSwitchDialog->setLayout(ipSwitchLayout);
 
