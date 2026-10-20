@@ -46,7 +46,7 @@ static void stub_updateCooperationStatus(NetworkUtil *, int) {}
 static void stub_disconnectRemote(NetworkUtil *, const QString &) {}
 static void stub_scs_stop(ShareCooperationServiceManager *) {}
 static void stub_updateDeviceState(DiscoverController *, const DeviceInfoPointer) {}
-static void stub_replyShareRequest(NetworkUtil *, bool, const QString &, const QString &) {}
+static void stub_replyShareRequest(NetworkUtil *, bool, const QString &, const QString &, bool) {}
 static void stub_tryShareApply(NetworkUtil *, const QString &, const QString &) {}
 static void stub_sendDisconnectShareEvents(NetworkUtil *, const QString &) {}
 static void stub_replyShareRequestBusy(NetworkUtil *, const QString &) {}

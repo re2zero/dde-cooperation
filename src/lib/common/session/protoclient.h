@@ -12,6 +12,8 @@
 #include "string/format.h"
 #include "threads/thread.h"
 
+#include <mutex>
+
 class ProtoClient : public NetUtil::Asio::SSLClient, public ProtoEndpoint
 {
 public:
@@ -52,12 +54,19 @@ private:
     bool pingMessageStart();
     void pingTimerStop();
 
+    std::string connectedHost() const;
+    void setConnectedHost(const std::string &host);
+    std::string realIP() const;
+
     void onHeartbeatTimeout(bool canceled);
 
 private:
     std::atomic<bool> _stop { false };
     std::atomic<bool> _connect_replay { false };
 
+    // Written by asio callbacks and read by callers on other threads
+    // (hasConnected through the tunnel send path).
+    mutable std::mutex _host_mutex;
     std::string _connected_host = { "" };
     std::string _real_ip = { "" };
     // heartbeat: ping <-> pong

@@ -1,4 +1,4 @@
-﻿// SPDX-FileCopyrightText: 2023-2024 UnionTech Software Technology Co., Ltd.
+﻿// SPDX-FileCopyrightText: 2023 - 2026 UnionTech Software Technology Co., Ltd.
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -11,15 +11,20 @@
 
 #include "configs/settings/configmanager.h"
 #include "common/commonutils.h"
+#include "common/constant.h"
 
 #include "share/sharecooperationservicemanager.h"
 #include "discover/discovercontroller.h"
 
 #include <sslcertconf.h>
 
+#include <QAbstractSocket>
 #include <QApplication>
-#include <QStandardPaths>
 #include <QDir>
+#include <QStandardPaths>
+#include <QTcpSocket>
+
+#include <memory>
 
 #ifdef __linux__
 #    include "base/reportlog/reportlogmanager.h"
@@ -82,6 +87,20 @@ void ShareHelperPrivate::initConnect()
     confirmTimer.setSingleShot(true);
     connect(&confirmTimer, &QTimer::timeout, q, &ShareHelper::onVerifyTimeout);
 
+    // The peer normally announces BARRIER_READY right after its server starts.
+    // If it is an older build, fall back to the direct connection.
+    barrierReadyTimer.setInterval(8 * 1000);
+    barrierReadyTimer.setSingleShot(true);
+    connect(&barrierReadyTimer, &QTimer::timeout, this, [this] {
+        if (!isRecvMode || !targetDeviceInfo
+            || targetDeviceInfo->connectStatus() != DeviceInfo::Connected)
+            return;
+        WLOG << "BARRIER_READY timeout, fallback to direct barrier connection";
+        tunnelPort = 0;
+        useTunnel = false;
+        startClientBarrier();
+    });
+
     connect(taskDialog(), &CooperationTaskDialog::retryConnected, q, [this] { q->connectToDevice(targetDeviceInfo); });
     connect(taskDialog(), &CooperationTaskDialog::rejectRequest, this, [this] { onActionTriggered(NotifyRejectAction); });
     connect(taskDialog(), &CooperationTaskDialog::acceptRequest, this, [this] { onActionTriggered(NotifyAcceptAction); });
@@ -96,6 +115,10 @@ void ShareHelperPrivate::cancelShareApply()
 {
     DLOG << "Canceling share application";
     taskDialog()->hide();
+    barrierReadyTimer.stop();
+    NetworkUtil::instance()->stopTunnels();
+    NetworkUtil::instance()->setTunnelPeer(QString());
+    tunnelPort = 0;
     NetworkUtil::instance()->cancelApply("share", targetDeviceInfo->ipAddress());
     DLOG << "Share application canceled";
 }
@@ -118,6 +141,10 @@ void ShareHelperPrivate::notifyMessage(const QString &body, const QStringList &a
 void ShareHelperPrivate::stopCooperation()
 {
     DLOG << "Stopping cooperation";
+    barrierReadyTimer.stop();
+    NetworkUtil::instance()->stopTunnels();
+    NetworkUtil::instance()->setTunnelPeer(QString());
+    tunnelPort = 0;
     if (targetDeviceInfo && targetDeviceInfo->connectStatus() == DeviceInfo::Connected) {
         q->disconnectToDevice(targetDeviceInfo);
     }
@@ -189,7 +216,7 @@ void ShareHelperPrivate::onActionTriggered(const QString &action)
         NetworkUtil::instance()->replyShareRequest(false, selfFingerPrint, senderDeviceIp);
     } else if (action == NotifyAcceptAction) {
         DLOG << "Action is NotifyAcceptAction";
-        NetworkUtil::instance()->replyShareRequest(true, selfFingerPrint, senderDeviceIp);
+        NetworkUtil::instance()->replyShareRequest(true, selfFingerPrint, senderDeviceIp, true);
 
         auto client = ShareCooperationServiceManager::instance()->client();
         // remove "--disable-crypto" if receive server has fingerprint.
@@ -201,6 +228,11 @@ void ShareHelperPrivate::onActionTriggered(const QString &action)
             SslCertConf::ins()->writeTrustPrint(true, recvServerPrint.toStdString());
         }
         client->setClientTargetIp(senderDeviceIp);
+
+        // This is the receive side: allow the peer to open the barrier tunnel.
+        NetworkUtil::instance()->setTunnelPeer(senderDeviceIp);
+        tunnelPort = 0;
+        useTunnel = false;
 
         auto info = DiscoverController::instance()->findDeviceByIP(senderDeviceIp);
         if (!info) {
@@ -229,7 +261,17 @@ void ShareHelperPrivate::onActionTriggered(const QString &action)
 
         // check setting and turn on/off client
         auto on = CooperationUtil::deviceInfo().value(AppSettings::PeripheralShareKey).toBool();
-        q->switchPeripheralShared(on);
+        if (!on) {
+            q->switchPeripheralShared(false);
+        } else if (peerSupportsTunnel) {
+            // Wait for the peer's barriers server. The fallback timer keeps
+            // compatibility with older peers that never send BARRIER_READY.
+            DLOG << "Waiting for peer barrier server ready";
+            barrierReadyTimer.start();
+        } else {
+            DLOG << "Peer does not support tunnel, starting direct barrier client";
+            q->switchPeripheralShared(true);
+        }
     } else {
         DLOG << "Unknown action:" << action.toStdString();
     }
@@ -305,6 +347,10 @@ void ShareHelper::connectToDevice(const DeviceInfoPointer info)
     d->isReplied = false;
     d->isTimeout = false;
     d->targetDevName = info->deviceName();
+    d->peerSupportsTunnel = false;
+    d->tunnelPort = 0;
+    d->useTunnel = false;
+    NetworkUtil::instance()->setTunnelPeer(info->ipAddress());
 
     static QString title(tr("Requesting collaborate to \"%1\""));
     d->taskDialog()->switchWaitPage(title.arg(CommonUitls::elidedText(d->targetDevName, Qt::ElideMiddle, 15)));
@@ -318,6 +364,12 @@ void ShareHelper::connectToDevice(const DeviceInfoPointer info)
 void ShareHelper::disconnectToDevice(const DeviceInfoPointer info)
 {
     NetworkUtil::instance()->sendDisconnectShareEvents(info->ipAddress());
+
+    d->barrierReadyTimer.stop();
+    NetworkUtil::instance()->stopTunnels();
+    NetworkUtil::instance()->setTunnelPeer(QString());
+    d->tunnelPort = 0;
+    d->useTunnel = false;
 
     DLOG << "Stopping cooperation service";
     ShareCooperationServiceManager::instance()->stop();
@@ -375,8 +427,13 @@ void ShareHelper::notifyConnectRequest(const QString &info)
     DLOG << "Received connection request:" << info.toStdString();
 
     bool isCooperating = NetworkUtil::instance()->isCurrentlyCooperating();
+    // After accepting, the barrier client may still be waiting for the peer's
+    // BARRIER_READY/probe (no barrier process yet), so isCurrentlyCooperating()
+    // alone does not cover the whole accepted session.
+    const bool receivingSessionActive = d->isRecvMode && d->targetDeviceInfo
+            && d->targetDeviceInfo->connectStatus() == DeviceInfo::Connected;
     // 检查是否正在协同中
-    if (isCooperating) {
+    if (isCooperating || receivingSessionActive) {
         WLOG << "Device is currently cooperating, rejecting new request immediately";
         
         // 解析请求信息以获取发起方信息
@@ -397,6 +454,13 @@ void ShareHelper::notifyConnectRequest(const QString &info)
     d->isTimeout = false;
     d->isRecvMode = true;
     d->senderDeviceIp.clear();
+    d->peerSupportsTunnel = false;
+    d->tunnelPort = 0;
+    d->useTunnel = false;
+    d->barrierReadyTimer.stop();
+    // A stale tunnel from an abnormally ended session must not be reused.
+    NetworkUtil::instance()->stopTunnels();
+    NetworkUtil::instance()->setTunnelPeer(QString());
     
     // 如果计时器仍在运行，停止它以避免旧请求超时干扰新请求
     if (d->confirmTimer.isActive()) {
@@ -419,6 +483,11 @@ void ShareHelper::notifyConnectRequest(const QString &info)
     if (infoList.size() >= 3) {
         d->recvServerPrint = infoList[2];
     }
+
+    if (infoList.size() >= 4) {
+        d->peerSupportsTunnel = (infoList[3] == QStringLiteral("1"));
+    }
+    DLOG << "Peer supports tunnel:" << d->peerSupportsTunnel;
 
 #ifdef __linux__
     d->notifyMessage(body.arg(CommonUitls::elidedText(d->targetDevName, Qt::ElideMiddle, 15)), actions, 10 * 1000);
@@ -479,6 +548,14 @@ void ShareHelper::handleConnectResult(int result, const QString &clientprint)
             d->targetDeviceInfo.reset();
             return;
         }
+
+        // Tell the peer that the barrier server is up. It will probe the port
+        // first and only fall back to the reverse tunnel when it is blocked.
+        NetworkUtil::instance()->setTunnelPeer(d->targetDeviceInfo->ipAddress());
+        const QString barrierTarget = d->targetDeviceInfo->ipAddress();
+        QTimer::singleShot(200, this, [barrierTarget] {
+            NetworkUtil::instance()->sendBarrierReady(barrierTarget);
+        });
 #ifdef ENABLE_COMPAT
         // the server has started, notify remote client connect
         if (!crypto) {
@@ -532,6 +609,166 @@ void ShareHelper::handleConnectResult(int result, const QString &clientprint)
     }
 }
 
+void ShareHelper::handleBarrierReady(const QString &ip)
+{
+    DLOG << "Barrier server ready from:" << ip.toStdString();
+    if (!d->isRecvMode || !d->targetDeviceInfo)
+        return;
+    if (d->targetDeviceInfo->connectStatus() != DeviceInfo::Connected)
+        return;
+    if (!d->senderDeviceIp.isEmpty() && d->senderDeviceIp != ip)
+        return;
+
+    d->barrierReadyTimer.stop();
+    d->senderDeviceIp = ip;
+    NetworkUtil::instance()->setTunnelPeer(ip);
+
+    auto on = CooperationUtil::deviceInfo().value(AppSettings::PeripheralShareKey).toBool();
+    if (!on) {
+        DLOG << "Peripheral sharing is disabled, ignore barrier ready";
+        return;
+    }
+
+    // A delayed BARRIER_READY must not restart a barrier client that the 8s
+    // fallback already started (direct) or that is already tunnelled.
+    auto client = ShareCooperationServiceManager::instance()->client();
+    if (client && client->isRunning()) {
+        DLOG << "Barrier client is already running, ignore barrier ready";
+        return;
+    }
+
+    // Test hooks: force the tunnel on a bidirectional network, or disable it
+    // to verify the direct path.
+    if (qEnvironmentVariableIsSet("DDE_COOPERATION_FORCE_TUNNEL")) {
+        DLOG << "Force tunnel mode";
+        d->startTunnelBarrier(ip);
+        return;
+    }
+    if (qEnvironmentVariableIsSet("DDE_COOPERATION_DISABLE_TUNNEL")) {
+        DLOG << "Tunnel disabled, using direct mode";
+        d->tunnelPort = 0;
+        d->useTunnel = false;
+        d->startClientBarrier();
+        return;
+    }
+
+    // Give the peer a short window to bind its barrier port. The probe is
+    // repeated so a slow server start does not force an unnecessary tunnel.
+    d->probeBarrierServer(ip, 3);
+}
+
+void ShareHelperPrivate::startClientBarrier()
+{
+    if (!isRecvMode)
+        return;
+
+    auto on = CooperationUtil::deviceInfo().value(AppSettings::PeripheralShareKey).toBool();
+    if (!on) {
+        DLOG << "Peripheral sharing is disabled, skip starting barrier client";
+        return;
+    }
+
+    auto client = ShareCooperationServiceManager::instance()->client();
+    if (client.isNull())
+        return;
+
+    if (tunnelPort > 0) {
+        client->setClientTarget(QStringLiteral("127.0.0.1"), tunnelPort);
+    } else {
+        if (senderDeviceIp.isEmpty())
+            return;
+        client->setClientTargetIp(senderDeviceIp);
+    }
+
+    DLOG << "Starting barrier client, tunnel port:" << tunnelPort;
+    client->startBarrier();
+}
+
+void ShareHelperPrivate::probeBarrierServer(const QString &ip, int attemptsLeft)
+{
+    auto *socket = new QTcpSocket(this);
+    auto finished = std::make_shared<bool>(false);
+
+    auto finish = [socket, finished]() {
+        if (*finished)
+            return false;
+        *finished = true;
+        socket->deleteLater();
+        return true;
+    };
+
+    connect(socket, &QTcpSocket::connected, this, [this, finish] {
+        if (!finish())
+            return;
+        DLOG << "Barrier server is directly reachable";
+        tunnelPort = 0;
+        useTunnel = false;
+        startClientBarrier();
+    });
+
+    connect(socket, &QTcpSocket::errorOccurred, this,
+            [this, ip, attemptsLeft, finish](QAbstractSocket::SocketError error) {
+        Q_UNUSED(error)
+        if (!finish())
+            return;
+        if (attemptsLeft > 1) {
+            QTimer::singleShot(300, this, [this, ip, attemptsLeft] {
+                probeBarrierServer(ip, attemptsLeft - 1);
+            });
+        } else {
+            startTunnelBarrier(ip);
+        }
+    });
+
+    QTimer::singleShot(1000, socket, [this, ip, attemptsLeft, socket, finish] {
+        if (!finish())
+            return;
+        socket->abort();
+        if (attemptsLeft > 1) {
+            QTimer::singleShot(300, this, [this, ip, attemptsLeft] {
+                probeBarrierServer(ip, attemptsLeft - 1);
+            });
+        } else {
+            startTunnelBarrier(ip);
+        }
+    });
+
+    DLOG << "Probing barrier server:" << ip.toStdString() << "attempts left:" << attemptsLeft;
+    socket->connectToHost(ip, UNI_SHARE_SERVER_PORT);
+}
+
+void ShareHelperPrivate::startTunnelBarrier(const QString &ip)
+{
+    if (!isRecvMode || !targetDeviceInfo
+        || targetDeviceInfo->connectStatus() != DeviceInfo::Connected) {
+        DLOG << "Not connected, skip starting tunnel";
+        return;
+    }
+
+    // A probe may finish after the user disabled peripheral sharing.
+    auto on = CooperationUtil::deviceInfo().value(AppSettings::PeripheralShareKey).toBool();
+    if (!on) {
+        DLOG << "Peripheral sharing is disabled, skip starting tunnel";
+        return;
+    }
+
+    NetworkUtil::instance()->setTunnelPeer(ip);
+    const quint16 port = NetworkUtil::instance()->startTunnelForward(QStringLiteral("barrier"));
+    if (port == 0) {
+        WLOG << "Failed to start barrier tunnel";
+        tunnelPort = 0;
+        useTunnel = false;
+        notifyMessage(tr("Unable to establish a connection to the remote device"), {}, 5 * 1000);
+        startClientBarrier();
+        return;
+    }
+
+    tunnelPort = port;
+    useTunnel = true;
+    DLOG << "Barrier tunnel is ready on 127.0.0.1:" << port;
+    startClientBarrier();
+}
+
 void ShareHelper::handleDisConnectResult(const QString &devName)
 {
     DLOG << "Handling disconnection result for:" << devName.toStdString();
@@ -541,6 +778,11 @@ void ShareHelper::handleDisConnectResult(const QString &devName)
     }
 
     DLOG << "Stopping cooperation service";
+    d->barrierReadyTimer.stop();
+    NetworkUtil::instance()->stopTunnels();
+    NetworkUtil::instance()->setTunnelPeer(QString());
+    d->tunnelPort = 0;
+    d->useTunnel = false;
     ShareCooperationServiceManager::instance()->stop();
 
     static QString body(tr("Coordination with \"%1\" has ended"));
@@ -638,6 +880,10 @@ void ShareHelper::onShareExcepted(int type, const QString &remote)
     switch (type) {
     case EX_NETWORK_PINGOUT: {
         DLOG << "Exception type: EX_NETWORK_PINGOUT";
+        d->barrierReadyTimer.stop();
+        NetworkUtil::instance()->stopTunnels();
+        NetworkUtil::instance()->setTunnelPeer(QString());
+        d->tunnelPort = 0;
         static QString title(tr("Network exception"));
         static QString msg(tr("Please check the network \"%1\""));
 
@@ -683,10 +929,26 @@ bool ShareHelper::switchPeripheralShared(bool on)
     }
 
     if (on) {
-        DLOG << "Starting barrier";
-        return client->startBarrier();
+        if (!d->isRecvMode) {
+            DLOG << "Not the receive side, skip starting barrier client";
+            return false;
+        }
+
+        // Re-enable the tunnel if the user toggled peripheral sharing off and
+        // on while the direct path is known to be blocked.
+        if (d->tunnelPort == 0 && d->useTunnel && !d->senderDeviceIp.isEmpty()) {
+            d->startTunnelBarrier(d->senderDeviceIp);
+            return true;
+        }
+
+        d->startClientBarrier();
+        return true;
     }
+
     DLOG << "Stopping barrier";
+    d->barrierReadyTimer.stop();
     client->stopBarrier();
+    NetworkUtil::instance()->stopTunnels();
+    d->tunnelPort = 0;
     return true;
 }

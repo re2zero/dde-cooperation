@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2023 UnionTech Software Technology Co., Ltd.
+// SPDX-FileCopyrightText: 2023 - 2026 UnionTech Software Technology Co., Ltd.
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -14,16 +14,24 @@ void ProtoEndpoint::setCallbacks(std::shared_ptr<SessionCallInterface> callbacks
 void ProtoEndpoint::sendDisRequest()
 {
     proto::DisconnectRequest dis;
+    std::lock_guard<std::mutex> locker(_send_lock);
     this->request(dis);
 }
 
 proto::OriginMessage ProtoEndpoint::syncRequest(const std::string &target, const proto::OriginMessage &msg)
 {
-    _active_target = target;
     _self_request.store(true, std::memory_order_relaxed);
 
+    std::future<proto::OriginMessage> futureResponse;
+    {
+        std::lock_guard<std::mutex> locker(_send_lock);
+        setActiveTarget(target);
+        futureResponse = this->request(msg);
+        clearActiveTarget();
+    }
+
     try {
-        return this->request(msg).get();
+        return futureResponse.get();
     } catch (const std::exception &ex) {
         // 捕获并处理异常
         std::cout << "syncRequest throw exception: " << ex.what() << std::endl;
@@ -50,17 +58,34 @@ void ProtoEndpoint::asyncRequestWithHandler(const std::string &target, const pro
 
 void ProtoEndpoint::asyncRequest(const std::string &target, const proto::OriginMessage &msg)
 {
-    _active_target = target;
     _self_request.store(true, std::memory_order_relaxed);
 
-    // new request comeing, reset all pending.
-    this->reset_requests();
-    //std::cout << "pending request: " << _responses_by_type.size() << std::endl;
-
     int32_t type = msg.mask;
-    std::future<proto::OriginMessage> futureResponse = this->request(msg);
+    std::future<proto::OriginMessage> futureResponse;
+    {
+        std::lock_guard<std::mutex> locker(_send_lock);
+        // new request comeing, reset all pending.
+        this->reset_requests();
+        //std::cout << "pending request: " << _responses_by_type.size() << std::endl;
+
+        setActiveTarget(target);
+        futureResponse = this->request(msg);
+        clearActiveTarget();
+    }
 
     _responses_by_type.insert(std::make_pair(type, std::move(futureResponse)));
+}
+
+void ProtoEndpoint::sendMessage(const std::string &target, int32_t mask, const std::string &payload)
+{
+    proto::OriginMessage msg;
+    msg.mask = mask;
+    msg.json_msg = payload;
+
+    std::lock_guard<std::mutex> locker(_send_lock);
+    setActiveTarget(target);
+    this->send(msg);
+    clearActiveTarget();
 }
 
 std::string ProtoEndpoint::getResponse(int32_t type)
