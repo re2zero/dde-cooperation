@@ -37,6 +37,25 @@ SessionWorker::~SessionWorker()
     _asioService->Stop();
 }
 
+bool SessionWorker::onTunnelMessage(const std::string &remote, const proto::OriginMessage &msg)
+{
+    if (!isTunnelMessageType(msg.mask))
+        return false;
+
+    if (static_cast<int64_t>(msg.json_msg.size()) > TUNNEL_MAX_FRAME_SIZE) {
+        WLOG << "onTunnelMessage: drop oversized frame, mask:" << msg.mask
+             << "size:" << msg.json_msg.size();
+        return true;
+    }
+
+    QByteArray payload;
+    if (!msg.json_msg.empty())
+        payload = QByteArray(msg.json_msg.data(), static_cast<int>(msg.json_msg.size()));
+
+    emit tunnelMessageReceived(msg.mask, payload, QString::fromStdString(remote));
+    return true;
+}
+
 void SessionWorker::onReceivedMessage(const proto::OriginMessage &request, proto::OriginMessage *response)
 {
     DLOG << "onReceivedMessage id=" << request.id << " mask=" << request.mask << " json_msg: " << request.json_msg;
@@ -377,6 +396,41 @@ bool SessionWorker::sendAsyncRequest(const QString &target, const proto::OriginM
 
     DLOG << "Failed to send async request to target:" << target.toStdString();
     return false;
+}
+
+void SessionWorker::sendTunnelMessage(const QString &target, int mask, const QByteArray &payload)
+{
+    if (target.isEmpty()) {
+        WLOG << "sendTunnelMessage: empty target";
+        return;
+    }
+
+    std::string ip = target.toStdString();
+    std::string data;
+    if (!payload.isEmpty())
+        data.assign(payload.constData(), static_cast<size_t>(payload.size()));
+
+    // Prefer the session that actually belongs to the target peer. The client
+    // side may be connected to a different device (e.g. a transfer session),
+    // and blindly using it would leak tunnel frames to the wrong peer.
+    if (_client && _client->hasConnected(ip)) {
+        _client->sendMessage(ip, mask, data);
+        return;
+    }
+
+    if (_server && _server->hasConnected(ip)) {
+        _server->sendMessage(ip, mask, data);
+        return;
+    }
+
+    // NAT fallback: the advertised IP may differ from the socket endpoint.
+    if (_client && _client->IsConnected()) {
+        WLOG << "sendTunnelMessage: using connected client fallback for:" << ip;
+        _client->sendMessage(ip, mask, data);
+        return;
+    }
+
+    WLOG << "sendTunnelMessage: no connected session for:" << ip;
 }
 
 void SessionWorker::updatePincode(QString code)

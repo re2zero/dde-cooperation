@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2023 UnionTech Software Technology Co., Ltd.
+// SPDX-FileCopyrightText: 2023 - 2026 UnionTech Software Technology Co., Ltd.
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -9,6 +9,7 @@
 #include "common/exportglobal.h"
 
 #include <QObject>
+#include <QByteArray>
 
 class SessionWorker;
 class TransferWorker;
@@ -36,6 +37,8 @@ public:
 
     void sendRpcRequest(const QString &target, int type, const QString &reqJson);
 
+    void sendTunnelMessage(const QString &target, int mask, const QByteArray &payload);
+
 signals:
     void notifyCancelWeb();
     void notifyConnection(int result, QString reason);
@@ -43,6 +46,9 @@ signals:
 
     // transfer status
     void notifyTransChanged(int status, const QString &path, quint64 size);
+
+    // raw tunnel frame received from the peer
+    void tunnelMessageReceived(int mask, const QByteArray &payload, const QString &remote);
 
 public slots:
     void handleTransData(const QString endpoint, const QStringList nameVector);

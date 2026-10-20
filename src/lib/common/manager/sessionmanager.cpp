@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2023 UnionTech Software Technology Co., Ltd.
+// SPDX-FileCopyrightText: 2023 - 2026 UnionTech Software Technology Co., Ltd.
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -26,6 +26,8 @@ SessionManager::SessionManager(QObject *parent) : QObject(parent)
     connect(_session_worker.get(), &SessionWorker::onTransCount, this, &SessionManager::handleTransCount, Qt::QueuedConnection);
     connect(_session_worker.get(), &SessionWorker::onCancelJob, this, &SessionManager::handleCancelTrans, Qt::QueuedConnection);
     connect(_session_worker.get(), &SessionWorker::onRpcResult, this, &SessionManager::handleRpcResult, Qt::QueuedConnection);
+    connect(_session_worker.get(), &SessionWorker::tunnelMessageReceived,
+            this, &SessionManager::tunnelMessageReceived, Qt::QueuedConnection);
 
     _file_counter = std::make_shared<FileSizeCounter>(this);
     connect(_file_counter.get(), &FileSizeCounter::onCountFinish, this, &SessionManager::handleFileCounted, Qt::QueuedConnection);
@@ -259,6 +261,11 @@ void SessionManager::sendRpcRequest(const QString &ip, int type, const QString &
 #endif
     WLOG << "sendRpcRequest " << request;
     _session_worker->sendAsyncRequest(ip, request);
+}
+
+void SessionManager::sendTunnelMessage(const QString &target, int mask, const QByteArray &payload)
+{
+    _session_worker->sendTunnelMessage(target, mask, payload);
 }
 
 void SessionManager::handleTransData(const QString endpoint, const QStringList nameVector)

@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2023 UnionTech Software Technology Co., Ltd.
+// SPDX-FileCopyrightText: 2023 - 2026 UnionTech Software Technology Co., Ltd.
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -15,8 +15,25 @@ void ProtoClient::DisconnectAndStop()
 
 bool ProtoClient::hasConnected(const std::string &ip)
 {
-    // std::cout << "hasConnected: " << ip << " ?= " << _connected_host << std::endl;
-    return ip == _connected_host;
+    return ip == connectedHost();
+}
+
+std::string ProtoClient::connectedHost() const
+{
+    std::lock_guard<std::mutex> locker(_host_mutex);
+    return _connected_host;
+}
+
+void ProtoClient::setConnectedHost(const std::string &host)
+{
+    std::lock_guard<std::mutex> locker(_host_mutex);
+    _connected_host = host;
+}
+
+std::string ProtoClient::realIP() const
+{
+    std::lock_guard<std::mutex> locker(_host_mutex);
+    return _real_ip;
 }
 
 bool ProtoClient::startHeartbeat()
@@ -33,6 +50,7 @@ bool ProtoClient::startHeartbeat()
 
 void ProtoClient::setRealIP(const std::string &real_ip)
 {
+    std::lock_guard<std::mutex> locker(_host_mutex);
     _real_ip = real_ip;
     // std::cout << "ProtoClient: Real IP set to " << real_ip << std::endl;
 }
@@ -40,20 +58,20 @@ void ProtoClient::setRealIP(const std::string &real_ip)
 void ProtoClient::handlePong(const std::string &remote)
 {
     // std::cout << "client pong: " << remote << std::endl;
-    _connected_host = remote;
+    setConnectedHost(remote);
     _nopong_count.store(0);
 }
 
 bool ProtoClient::pingMessageStart()
 {
-    if (_connected_host.empty() || !IsHandshaked()) {
+    if (connectedHost().empty() || !IsHandshaked()) {
         std::cout << "Try to start ping failed";
         return false;
     }
 
     proto::MessageNotify ping;
     ping.notification = "ping";
-    send(ping);
+    sendLocked(ping);
 
     _ping_timer->Setup(BaseKit::Timespan::seconds(HEARTBEAT_INTERVAL));
     return _ping_timer->WaitAsync();
@@ -61,7 +79,7 @@ bool ProtoClient::pingMessageStart()
 
 void ProtoClient::pingTimerStop()
 {
-    _connected_host = "";
+    setConnectedHost("");
     if (_ping_timer) {
         _ping_timer->Cancel();
     }
@@ -77,8 +95,9 @@ void ProtoClient::onHeartbeatTimeout(bool canceled)
             pingMessageStart();
         } else {
             // no pong more than 3 times
+            std::string host = connectedHost();
             if (_callbacks)
-                _callbacks->onStateChanged(RPC_PINGOUT, _connected_host);
+                _callbacks->onStateChanged(RPC_PINGOUT, host);
             pingTimerStop();
         }
     }
@@ -103,18 +122,21 @@ void ProtoClient::onHandshaked()
     // Reset FBE protocol buffers
     reset();
 
-    _connected_host = socket().remote_endpoint().address().to_string();
+    const std::string host = socket().remote_endpoint().address().to_string();
+    setConnectedHost(host);
 
     // Send real IP notification to server if real IP is set
-    if (!_real_ip.empty()) {
+    const std::string realIp = realIP();
+    if (!realIp.empty()) {
         proto::MessageNotify realip_notify;
-        realip_notify.notification = "real_ip:" + _real_ip;
-        send(realip_notify);
-        // std::cout << "Sent real IP notification: " << _real_ip << " to server" << std::endl;
+        realip_notify.notification = "real_ip:" + realIp;
+        sendLocked(realip_notify);
+        // std::cout << "Sent real IP notification: " << realIp << " to server" << std::endl;
     }
 
     if (_callbacks) {
-        _callbacks->onStateChanged(RPC_CONNECTED, _connected_host);
+        std::string connected = host;
+        _callbacks->onStateChanged(RPC_CONNECTED, connected);
     }
 }
 
@@ -126,7 +148,8 @@ void ProtoClient::onDisconnected()
     bool retry = true;
     if (_callbacks) {
         //can not get the remote address if has not connected yet.
-         retry = _callbacks->onStateChanged(RPC_DISCONNECTED, _connected_host);
+        std::string host = connectedHost();
+        retry = _callbacks->onStateChanged(RPC_DISCONNECTED, host);
     }
     pingTimerStop();
 
@@ -164,6 +187,10 @@ void ProtoClient::onReceive(const ::proto::DisconnectRequest &request)
 
 void ProtoClient::onReceive(const ::proto::OriginMessage &response)
 {
+    // Tunnel frames are neither responses nor remote RPC requests.
+    if (_callbacks && _callbacks->onTunnelMessage(connectedHost(), response))
+        return;
+
     // notify response if the request from myself, request.get()
     if (_self_request.load(std::memory_order_relaxed)) {
         _self_request.store(false, std::memory_order_relaxed);
@@ -183,7 +210,7 @@ void ProtoClient::onReceive(const ::proto::OriginMessage &response)
     }
 
     if (!reply.json_msg.empty())
-        send(reply);
+        sendLocked(reply);
 }
 
 void ProtoClient::onReceive(const ::proto::MessageReject &reject)

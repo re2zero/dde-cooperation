@@ -1,4 +1,4 @@
-﻿// SPDX-FileCopyrightText: 2023-2024 UnionTech Software Technology Co., Ltd.
+﻿// SPDX-FileCopyrightText: 2023 - 2026 UnionTech Software Technology Co., Ltd.
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -115,9 +115,16 @@ bool ShareCooperationService::setServerConfig(const ShareServerConfig &config)
 void ShareCooperationService::setClientTargetIp(const QString &ip)
 {
     DLOG << "Setting client target IP:" << ip.toStdString();
-    cooConfig().setServerIp(ip);
-    cooConfig().setPort(UNI_SHARE_SERVER_PORT);
-    DLOG << "Client target port:" << UNI_SHARE_SERVER_PORT;
+    _clientTargetIp = ip;
+    _clientTargetPort = UNI_SHARE_SERVER_PORT;
+    DLOG << "Client target port:" << _clientTargetPort;
+}
+
+void ShareCooperationService::setClientTarget(const QString &ip, int port)
+{
+    DLOG << "Setting client target:" << ip.toStdString() << "port:" << port;
+    _clientTargetIp = ip;
+    _clientTargetPort = port;
 }
 
 void ShareCooperationService::setEnableCrypto(bool enable)
@@ -276,8 +283,8 @@ bool ShareCooperationService::clientArgs(QStringList &args, QString &app)
         WLOG << "Barrier client not found:" << app.toStdString();
         return false;
     }
-    if (cooConfig().serverIp().isEmpty()) {
-        WLOG << "Barrier client serverIp not setting!";
+    if (_clientTargetIp.isEmpty()) {
+        WLOG << "Barrier client target is not set!";
         return false;
     }
 
@@ -286,7 +293,7 @@ bool ShareCooperationService::clientArgs(QStringList &args, QString &app)
     app = QString("\"%1\"").arg(app);
 #endif
 
-    args << "[" + cooConfig().serverIp() + "]:" + QString::number(cooConfig().port());
+    args << "[" + _clientTargetIp + "]:" + QString::number(_clientTargetPort);
 
     return true;
 }
