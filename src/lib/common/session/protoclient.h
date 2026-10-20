@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2023 UnionTech Software Technology Co., Ltd.
+// SPDX-FileCopyrightText: 2023 - 2026 UnionTech Software Technology Co., Ltd.
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -11,6 +11,8 @@
 #include "asio/ssl_client.h"
 #include "string/format.h"
 #include "threads/thread.h"
+
+#include <mutex>
 
 class ProtoClient : public NetUtil::Asio::SSLClient, public ProtoEndpoint
 {
@@ -52,12 +54,19 @@ private:
     bool pingMessageStart();
     void pingTimerStop();
 
+    std::string connectedHost() const;
+    void setConnectedHost(const std::string &host);
+    std::string realIP() const;
+
     void onHeartbeatTimeout(bool canceled);
 
 private:
     std::atomic<bool> _stop { false };
     std::atomic<bool> _connect_replay { false };
 
+    // Written by asio callbacks and read by callers on other threads
+    // (hasConnected through the tunnel send path).
+    mutable std::mutex _host_mutex;
     std::string _connected_host = { "" };
     std::string _real_ip = { "" };
     // heartbeat: ping <-> pong

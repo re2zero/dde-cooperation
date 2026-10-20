@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2023-2024 UnionTech Software Technology Co., Ltd.
+// SPDX-FileCopyrightText: 2023 - 2026 UnionTech Software Technology Co., Ltd.
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -10,6 +10,8 @@
 #include <QSettings>
 #include <QTextStream>
 #include "discover/deviceinfo.h"
+
+#include <common/constant.h>
 
 typedef enum barrier_type_t {
     Server = 555,
@@ -60,6 +62,7 @@ public:
     bool setServerConfig(const ShareServerConfig &config);
 
     void setClientTargetIp(const QString &ip);
+    void setClientTarget(const QString &ip, int port);
 
     void setEnableCrypto(bool enable);
     void setBarrierProfile(const QString &dir);
@@ -101,6 +104,11 @@ private:
     QProcess *_pBarrier { nullptr };
     BarrierType _brrierType;
     QString _barrierConfig;
+
+    // Runtime-only client target. The tunnel port is ephemeral and must not
+    // be persisted into QSettings.
+    QString _clientTargetIp;
+    int _clientTargetPort { UNI_SHARE_SERVER_PORT };
 
     bool _expectedRunning = false;
 };

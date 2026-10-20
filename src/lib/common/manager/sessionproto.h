@@ -1,4 +1,4 @@
-﻿// SPDX-FileCopyrightText: 2023 UnionTech Software Technology Co., Ltd.
+﻿// SPDX-FileCopyrightText: 2023 - 2026 UnionTech Software Technology Co., Ltd.
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -151,6 +151,7 @@ struct ApplyMessage {
     std::string  host;
     int64_t port {0};
     std::string  fingerprint {""};
+    bool tunnel { false };  // peer supports the reverse tunnel
 
     void from_json(const picojson::value& _x_) {
         flag = _x_.get("flag").get<int64_t>();
@@ -161,6 +162,16 @@ struct ApplyMessage {
             fingerprint = _x_.get("fingerprint").to_str();
         else
             fingerprint = "";
+        tunnel = false;
+        if (_x_.contains("tunnel")) {
+            // Old peers omit it; tolerate a numeric encoding as well so a
+            // malformed field cannot trip picojson's type assertion.
+            const auto &value = _x_.get("tunnel");
+            if (value.is<bool>())
+                tunnel = value.get<bool>();
+            else if (value.is<double>())
+                tunnel = value.get<double>() != 0;
+        }
     }
 
     picojson::value as_json() const {
@@ -170,6 +181,7 @@ struct ApplyMessage {
         obj["selfIp"] = picojson::value(host);
         obj["selfPort"] = picojson::value(port);
         obj["fingerprint"] = picojson::value(fingerprint);
+        obj["tunnel"] = picojson::value(tunnel);
         return picojson::value(obj);
     }
 };

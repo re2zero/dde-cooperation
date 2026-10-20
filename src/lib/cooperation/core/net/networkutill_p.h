@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2023 UnionTech Software Technology Co., Ltd.
+// SPDX-FileCopyrightText: 2023 - 2026 UnionTech Software Technology Co., Ltd.
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -11,6 +11,7 @@
 #include <QObject>
 
 class SessionManager;
+class TunnelManager;
 namespace cooperation_core {
 
 class NetworkUtil;
@@ -34,6 +35,7 @@ public Q_SLOTS:
 private:
     NetworkUtil *q { nullptr };
     SessionManager *sessionManager { nullptr };
+    TunnelManager *tunnelManager { nullptr };
 
     QString confirmTargetAddress {""};   // remote ip address
     QString storageRoot = {};   //storage dir config

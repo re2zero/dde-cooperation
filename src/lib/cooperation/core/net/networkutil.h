@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2023 - 2024 UnionTech Software Technology Co., Ltd.
+// SPDX-FileCopyrightText: 2023 - 2026 UnionTech Software Technology Co., Ltd.
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -42,9 +42,17 @@ public:
     void tryShareApply(const QString &ip, const QString &selfprint);
     void sendShareApply(const QString &ip, bool compat);
     void sendDisconnectShareEvents(const QString &ip);
-    void replyShareRequest(bool agree, const QString &selfprint, const QString &targetIp);
+    void replyShareRequest(bool agree, const QString &selfprint, const QString &targetIp,
+                           bool tunnelSupported = false);
     void replyShareRequestBusy(const QString &targetIp);
     void cancelApply(const QString &type, const QString &targetIp);
+
+    // reverse tunnel
+    void sendBarrierReady(const QString &ip);
+    void setTunnelPeer(const QString &ip);
+    quint16 startTunnelForward(const QString &serviceId);
+    void stopTunnels();
+    bool isTunnelForwarding() const;
 
     QString deviceInfoStr();
 

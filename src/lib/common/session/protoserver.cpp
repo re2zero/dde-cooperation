@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2023 UnionTech Software Technology Co., Ltd.
+// SPDX-FileCopyrightText: 2023 - 2026 UnionTech Software Technology Co., Ltd.
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -7,6 +7,7 @@
 using MessageHandler = std::function<void(const proto::OriginMessage &request, proto::OriginMessage *response)>;
 using NotifyHandler = std::function<void(const std::string &addr)>;
 using RealIPHandler = std::function<void(const std::string &real_ip, const std::string &remote_ip)>;
+using TunnelHandler = std::function<bool(const std::string &remote, const proto::OriginMessage &request)>;
 
 class ProtoSession : public NetUtil::Asio::SSLSession, public FBE::proto::FinalClient
 {
@@ -26,6 +27,11 @@ public:
     void setRealIPHandler(RealIPHandler cb)
     {
         _realip_handler = std::move(cb);
+    }
+
+    void setTunnelHandler(TunnelHandler cb)
+    {
+        _tunnelhandler = std::move(cb);
     }
 
 protected:
@@ -49,6 +55,16 @@ protected:
     void onReceive(const ::proto::OriginMessage &request) override
     {
         //std::cout << "Server Received: " << request << std::endl;
+
+        // Tunnel frames are a raw byte channel. They must be routed before the
+        // JSON validation and before the RPC response matching logic.
+        std::string remote;
+        try {
+            remote = socket().remote_endpoint().address().to_string();
+        } catch (...) {
+        }
+        if (_tunnelhandler && _tunnelhandler(remote, request))
+            return;
 
         // Validate request
         if (request.json_msg.empty()) {
@@ -124,6 +140,7 @@ private:
     MessageHandler _msghandler { nullptr };
     NotifyHandler _notifyhandler { nullptr };
     RealIPHandler _realip_handler { nullptr };
+    TunnelHandler _tunnelhandler { nullptr };
 };
 
 
@@ -271,10 +288,15 @@ ProtoServer::CreateSession(const std::shared_ptr<NetUtil::Asio::SSLServer> &serv
         handleRealIPMapping(real_ip, remote_ip);
     });
 
+    TunnelHandler tunnel_cb([this](const std::string &remote, const proto::OriginMessage &request) {
+        return _callbacks && _callbacks->onTunnelMessage(remote, request);
+    });
+
     auto session = std::make_shared<ProtoSession>(server);
     session->setMessageHandler(msg_cb);
     session->setNotifyHandler(nft_cb);
     session->setRealIPHandler(realip_cb);
+    session->setTunnelHandler(tunnel_cb);
 
     return session;
 }

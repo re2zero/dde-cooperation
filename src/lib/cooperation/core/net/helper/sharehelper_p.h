@@ -1,4 +1,4 @@
-﻿// SPDX-FileCopyrightText: 2023-2024 UnionTech Software Technology Co., Ltd.
+﻿// SPDX-FileCopyrightText: 2023 - 2026 UnionTech Software Technology Co., Ltd.
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -30,6 +30,11 @@ public:
     void notifyMessage(const QString &body, const QStringList &actions, int expireTimeout);
     void reportConnectionData();
 
+    // barrier client startup: direct first, tunnel fallback
+    void startClientBarrier();
+    void probeBarrierServer(const QString &ip, int attemptsLeft);
+    void startTunnelBarrier(const QString &ip);
+
 public Q_SLOTS:
     void onActionTriggered(const QString &action);
     void stopCooperation();
@@ -46,6 +51,14 @@ public:
     bool isTimeout { false };
 
     QTimer confirmTimer;
+    QTimer barrierReadyTimer;
+
+    // 对端是否支持反向隧道（来自 APPLY_SHARE 的第四个字段）
+    bool peerSupportsTunnel { false };
+    // 当前 barrier 隧道使用的本地端口，0 表示直连
+    quint16 tunnelPort { 0 };
+    bool useTunnel { false };
+
     // 作为接收方时，发送方的ip
     QString senderDeviceIp;
     // 作为发送方时，为接收方设备信息；作为接收方时，为发送方设备信息

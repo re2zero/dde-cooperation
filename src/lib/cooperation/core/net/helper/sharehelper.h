@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2023-2024 UnionTech Software Technology Co., Ltd.
+// SPDX-FileCopyrightText: 2023 - 2026 UnionTech Software Technology Co., Ltd.
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -30,6 +30,7 @@ public Q_SLOTS:
 
     //client
     void handleConnectResult(int result, const QString &clientprint = "");
+    void handleBarrierReady(const QString &ip);
     void handleDisConnectResult(const QString &devName);
     void handleCancelCooperApply();
     void handleNetworkDismiss(const QString &msg);

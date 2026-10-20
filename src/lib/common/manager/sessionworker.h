@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2023 UnionTech Software Technology Co., Ltd.
+// SPDX-FileCopyrightText: 2023 - 2026 UnionTech Software Technology Co., Ltd.
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -8,11 +8,13 @@
 #include "session/asioservice.h"
 #include "session/protoserver.h"
 #include "session/protoclient.h"
+#include "session/tunnelproto.h"
 
 #include "sessionproto.h"
 
 #include <QObject>
 #include <QMap>
+#include <QByteArray>
 
 class SessionWorker : public QObject, public SessionCallInterface
 {
@@ -25,6 +27,8 @@ public:
 
     bool onStateChanged(int state, std::string &msg) override;
 
+    bool onTunnelMessage(const std::string &remote, const proto::OriginMessage &msg) override;
+
     void setExtMessageHandler(ExtenMessageHandler cb);
 
     void stop();
@@ -35,6 +39,7 @@ public:
 
     QString sendRequest(const QString &target, const proto::OriginMessage &request);
     bool sendAsyncRequest(const QString &target, const proto::OriginMessage &request);
+    void sendTunnelMessage(const QString &target, int mask, const QByteArray &payload);
 
     void updatePincode(QString code);
     void updateLogin(QString ip, bool logined);
@@ -59,6 +64,9 @@ signals:
 
     // I/O exception
     void onNetException(const QString &remote);
+
+    // raw tunnel frame received from the session
+    void tunnelMessageReceived(int mask, const QByteArray &payload, const QString &remote);
 public slots:
     void handleRemoteDisconnected(const QString &remote);
 

@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2023 UnionTech Software Technology Co., Ltd.
+// SPDX-FileCopyrightText: 2023 - 2026 UnionTech Software Technology Co., Ltd.
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -16,6 +16,7 @@ typedef enum apply_type_t {
     APPLY_SHARE = 111,   // 控制申请
     APPLY_SHARE_RESULT = 112,   // 控制申请的结果
     APPLY_SHARE_STOP = 113,   // 收到停止事件
+    APPLY_BARRIER_READY = 114,   // barrier 服务端已就绪
     APPLY_CANCELED = 120,   // 申请被取消
     APPLY_SCAN_CONNECT = 200,   // 申请扫码连接
     APPLY_PROJECTION = 201,   // 投屏申请
