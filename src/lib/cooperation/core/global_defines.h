@@ -113,6 +113,23 @@ inline constexpr char CacheGroup[] { "Cache" };
 inline constexpr char TransHistoryKey[] { "TransHistory" };
 inline constexpr char ConnectHistoryKey[] { "ConnectHistory" };
 inline constexpr char CloseOptionKey[] { "CloseOption" };
+
+// 子网转发（subnet-forward）。v1 只读配置不做 UI，一切默认关闭；运行态一律
+// 不落盘。设备白名单语义见 SubnetForwardConfig：列表为空即拒绝所有对端。
+inline constexpr char SubnetForwardGroup[] { "SubnetForward" };
+inline constexpr char SubnetForwardEnabled[] { "Enabled" };                     // 功能总开关
+inline constexpr char SubnetForwardUsePeer[] { "UsePeerSubnet" };               // B 角色：允许本机流量经对端转发
+inline constexpr char SubnetForwardServePeer[] { "ServePeer" };                 // A 角色：愿意为对端提供转发
+inline constexpr char SubnetForwardNetworks[] { "Networks" };                   // CIDR 列表，空 = 功能不生效
+inline constexpr char SubnetForwardAllowedHosts[] { "AllowedHosts" };           // 网段内再限 IP，空 = 整网段
+inline constexpr char SubnetForwardAllowedPorts[] { "AllowedPorts" };           // 端口/范围列表，空 = 除拒绝外全部
+inline constexpr char SubnetForwardDeniedPorts[] { "DeniedPorts" };             // 默认含 51598
+inline constexpr char SubnetForwardDeviceWhitelist[] { "DeviceWhitelist" };     // 对端 IP 列表；空 = 拒绝所有对端
+inline constexpr char SubnetForwardMaxStreams[] { "MaxStreams" };               // 并发流上限，默认 16
+inline constexpr char SubnetForwardMaxRate[] { "MaxBytesPerSecond" };           // 全局带宽上限，0 = 不限
+inline constexpr char SubnetForwardIdleTimeout[] { "IdleTimeoutMs" };           // 空闲流超时，0 = 不启用
+inline constexpr char SubnetForwardDialTimeout[] { "DialTimeoutMs" };           // 拨号超时，0 = 默认 5s
+inline constexpr char SubnetForwardAllowNonLocal[] { "AllowNonLocalNetworks" }; // 跳板防护：默认只放行本机所在网段
 }
 
 // 组策略
