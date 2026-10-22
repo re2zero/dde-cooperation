@@ -5,10 +5,12 @@
 #include "forwardhelperservice.h"
 
 #include <QCoreApplication>
+#include <QDebug>
 #include <QDBusConnection>
 #include <QSocketNotifier>
 
 #include <csignal>
+#include <cstring>
 #include <sys/socket.h>
 #include <unistd.h>
 

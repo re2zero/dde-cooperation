@@ -42,7 +42,10 @@ inline constexpr const char *kMarker = "dde-cooperation-forward";
 
 inline QList<quint16> sortedPorts(const QSet<quint16> &ports)
 {
-    QList<quint16> sorted(ports.cbegin(), ports.cend());
+    // QSet::values() instead of a QList iterator-pair constructor: the
+    // latter only exists from Qt 5.14 on, and this tree still builds
+    // against Qt 5.11 (V20).
+    QList<quint16> sorted = ports.values();
     std::sort(sorted.begin(), sorted.end());
     return sorted;
 }

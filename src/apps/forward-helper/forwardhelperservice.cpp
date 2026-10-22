@@ -11,6 +11,7 @@
 #include <QDBusMessage>
 #include <QDBusServiceWatcher>
 #include <QDBusVariant>
+#include <QDebug>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QVariant>
