@@ -6,6 +6,7 @@
 #define TUNNELMANAGER_H
 
 #include <QByteArray>
+#include <QElapsedTimer>
 #include <QHash>
 #include <QHostAddress>
 #include <QObject>
@@ -37,6 +38,12 @@ struct SubnetForwardPolicy {
     QSet<quint16> deniedPorts { kSessionPortDenied };
     // Concurrent subnet-forward streams the peer may keep open.
     int maxStreams { kDefaultMaxStreams };
+    // Shared relay budget for subnet-forward streams, 0 = unlimited.
+    qint64 maxBytesPerSecond { 0 };
+    // Close a subnet-forward stream after this much inactivity, 0 = off.
+    int idleTimeoutMs { 0 };
+    // Override of the connect timeout for dynamic targets, 0 = default.
+    int dialTimeoutMs { 0 };
 
     static constexpr quint16 kSessionPortDenied = 51598;
     static constexpr int kDefaultMaxStreams = 16;
@@ -135,7 +142,9 @@ private:
         int dialAttempts { 0 };
         bool ready { false };
         bool dialer { false };
+        bool budgetPending { false };
         QTimer *timeout { nullptr };
+        QTimer *idle { nullptr };
     };
     struct Service {
         QString host;
@@ -155,7 +164,12 @@ private:
 
     bool targetAllowed(const QString &host, quint16 port, QString *reason) const;
     int dynamicStreamCount() const;
-    Stream *createDialerStream(quint32 id, const QString &serviceId, const QString &token);
+    Stream *createDialerStream(quint32 id, const QString &serviceId, const QString &token,
+                               int timeoutMs = 0);
+    bool consumeBandwidth(Stream *stream, qint64 bytes);
+    void startIdleTimer(Stream *stream);
+    void kickIdleTimer(Stream *stream);
+    void stopIdleTimer(Stream *stream);
 
     Stream *findStream(quint32 id) const;
     Stream *createStream(quint32 id, const QString &serviceId, const QString &token, bool dialer);
@@ -164,7 +178,7 @@ private:
 
     void acceptLocalConnection(const QString &serviceId);
     void setupSocket(Stream *stream);
-    void startConnectTimeout(Stream *stream);
+    void startConnectTimeout(Stream *stream, int timeoutMs = 0);
     void pump(quint32 id);
     void flushPending(quint32 id);
     void sendData(quint32 id, const QByteArray &data);
@@ -196,6 +210,8 @@ private:
     static constexpr int kMaxServiceIdLength = 128;
     // Hard ceiling for the configured subnet-forward stream limit.
     static constexpr int kMaxSubnetStreams = 256;
+    // Reject absurd dial timeouts from configuration.
+    static constexpr int kMaxDialTimeoutMs = 60 * 1000;
 
     SendHandler _send;
     QHash<QString, Service> _services;
@@ -208,6 +224,11 @@ private:
     bool _subnetForward { false };
     QVector<QPair<QHostAddress, int>> _subnetNetworks;
     QSet<quint32> _subnetHosts;
+
+    // Shared relay budget across all subnet-forward streams.
+    QElapsedTimer _bandwidthClock;
+    qint64 _bandwidthBudget { 0 };
+    qint64 _bandwidthStamp { 0 };
 };
 
 #endif   // TUNNELMANAGER_H

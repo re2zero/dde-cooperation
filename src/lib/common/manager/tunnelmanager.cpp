@@ -46,6 +46,7 @@ bool parseStreamId(const QJsonObject &object, quint32 *id)
 TunnelManager::TunnelManager(QObject *parent)
     : QObject(parent)
 {
+    _bandwidthClock.start();
 }
 
 TunnelManager::~TunnelManager()
@@ -106,6 +107,13 @@ bool TunnelManager::setSubnetForwardPolicy(const SubnetForwardPolicy &policy)
 
     if (policy.maxStreams < 0 || policy.maxStreams > kMaxSubnetStreams) {
         WLOG << "TunnelManager: invalid subnet-forward stream limit:" << policy.maxStreams;
+        return false;
+    }
+    if (policy.maxBytesPerSecond < 0 || policy.idleTimeoutMs < 0 || policy.dialTimeoutMs < 0
+        || policy.dialTimeoutMs > kMaxDialTimeoutMs) {
+        WLOG << "TunnelManager: invalid subnet-forward limits, rate:"
+             << policy.maxBytesPerSecond << "idle:" << policy.idleTimeoutMs
+             << "dial:" << policy.dialTimeoutMs;
         return false;
     }
 
@@ -414,7 +422,7 @@ void TunnelManager::setupSocket(Stream *stream)
     });
 }
 
-void TunnelManager::startConnectTimeout(Stream *stream)
+void TunnelManager::startConnectTimeout(Stream *stream, int timeoutMs)
 {
     if (!stream)
         return;
@@ -435,7 +443,7 @@ void TunnelManager::startConnectTimeout(Stream *stream)
         }
         destroyStream(id, "connect timeout", false);
     });
-    stream->timeout->start(kConnectTimeoutMs);
+    stream->timeout->start(timeoutMs > 0 ? timeoutMs : kConnectTimeoutMs);
 }
 
 void TunnelManager::handleOpen(const QString &remote, const QByteArray &payload)
@@ -510,7 +518,9 @@ void TunnelManager::handleDynamicOpen(quint32 id, const QString &dst, const QStr
         return;
     }
 
-    Stream *stream = createDialerStream(id, QLatin1String(kSubnetForwardService), token);
+    // The configured dial timeout overrides the default for dynamic targets.
+    const int dialTimeout = _subnetPolicy.dialTimeoutMs > 0 ? _subnetPolicy.dialTimeoutMs : 0;
+    Stream *stream = createDialerStream(id, QLatin1String(kSubnetForwardService), token, dialTimeout);
     stream->dstHost = host;
     stream->dstPort = port;
 
@@ -573,13 +583,13 @@ int TunnelManager::dynamicStreamCount() const
 }
 
 TunnelManager::Stream *TunnelManager::createDialerStream(quint32 id, const QString &serviceId,
-                                                         const QString &token)
+                                                         const QString &token, int timeoutMs)
 {
     Stream *stream = createStream(id, serviceId, token, true);
     stream->sock = new QTcpSocket(this);
     stream->sock->setSocketOption(QAbstractSocket::LowDelayOption, 1);
     setupSocket(stream);
-    startConnectTimeout(stream);
+    startConnectTimeout(stream, timeoutMs);
 
     connect(stream->sock, &QTcpSocket::connected, this, [this, id] {
         Stream *current = findStream(id);
@@ -592,6 +602,7 @@ TunnelManager::Stream *TunnelManager::createDialerStream(quint32 id, const QStri
             current->timeout->deleteLater();
             current->timeout = nullptr;
         }
+        startIdleTimer(current);
 
         _send(_peerIp, TUNNEL_OPEN_ACK, makeOpenAck(id, true, current->token));
         flushPending(id);
@@ -608,6 +619,60 @@ TunnelManager::Stream *TunnelManager::createDialerStream(quint32 id, const QStri
     });
 
     return stream;
+}
+
+// Shared relay budget across the subnet-forward streams. Returns false when
+// the configured rate is exhausted for the current one second window; the
+// stream then waits instead of reading from its socket, which applies TCP
+// backpressure all the way to the sender.
+bool TunnelManager::consumeBandwidth(Stream *stream, qint64 bytes)
+{
+    if (_subnetPolicy.maxBytesPerSecond <= 0 || !stream || stream->dstHost.isEmpty())
+        return true;
+
+    const qint64 now = _bandwidthClock.elapsed();
+    if (now - _bandwidthStamp >= 1000) {
+        _bandwidthStamp = now;
+        _bandwidthBudget = _subnetPolicy.maxBytesPerSecond;
+    }
+    if (_bandwidthBudget <= 0)
+        return false;
+    if (bytes > _bandwidthBudget) {
+        _bandwidthBudget = 0;
+        return true;
+    }
+    _bandwidthBudget -= bytes;
+    return true;
+}
+
+void TunnelManager::startIdleTimer(Stream *stream)
+{
+    if (!stream || stream->dstHost.isEmpty() || _subnetPolicy.idleTimeoutMs <= 0)
+        return;
+
+    const quint32 id = stream->id;
+    stream->idle = new QTimer(this);
+    stream->idle->setSingleShot(true);
+    connect(stream->idle, &QTimer::timeout, this, [this, id] {
+        WLOG << "TunnelManager: subnet-forward stream" << id << "idle timeout";
+        destroyStream(id, "idle timeout", true);
+    });
+    stream->idle->start(_subnetPolicy.idleTimeoutMs);
+}
+
+void TunnelManager::kickIdleTimer(Stream *stream)
+{
+    if (stream && stream->idle)
+        stream->idle->start(_subnetPolicy.idleTimeoutMs);
+}
+
+void TunnelManager::stopIdleTimer(Stream *stream)
+{
+    if (stream && stream->idle) {
+        stream->idle->stop();
+        stream->idle->deleteLater();
+        stream->idle = nullptr;
+    }
 }
 
 void TunnelManager::dialService(quint32 id)
@@ -673,6 +738,7 @@ void TunnelManager::handleOpenAck(const QString &remote, const QByteArray &paylo
         stream->timeout->deleteLater();
         stream->timeout = nullptr;
     }
+    startIdleTimer(stream);
 
     DLOG << "TunnelManager: stream" << id << "opened";
     emit streamOpened(id, stream->serviceId);
@@ -707,8 +773,10 @@ void TunnelManager::handleData(const QByteArray &payload)
     }
 
     stream->pending.append(chunk);
-    if (!stream->dstHost.isEmpty())
+    if (!stream->dstHost.isEmpty()) {
         stream->relayedToTarget += chunk.size();
+        kickIdleTimer(stream);
+    }
     flushPending(id);
 }
 
@@ -836,6 +904,7 @@ void TunnelManager::destroyStream(quint32 id, const QString &reason, bool notify
         stream->timeout->deleteLater();
         stream->timeout = nullptr;
     }
+    stopIdleTimer(stream);
 
     if (stream->sock) {
         stream->sock->disconnect(this);
@@ -864,11 +933,37 @@ void TunnelManager::pump(quint32 id)
     if (!stream || !stream->ready || !stream->sock)
         return;
 
+    // A previous pump left a re-schedule pending; this call supersedes it.
+    stream->budgetPending = false;
+
     while (stream->unacked < kWindowSize && stream->sock->bytesAvailable() > 0) {
-        const qint64 want = qMin<qint64>(kChunkSize, kWindowSize - stream->unacked);
+        qint64 want = qMin<qint64>(kChunkSize, kWindowSize - stream->unacked);
+
+        // Pacing applies to the target-to-peer direction only: it is the
+        // direction that carries the bulk of forwarded traffic.
+        if (!stream->dstHost.isEmpty() && _subnetPolicy.maxBytesPerSecond > 0) {
+            const qint64 now = _bandwidthClock.elapsed();
+            if (now - _bandwidthStamp >= 1000) {
+                _bandwidthStamp = now;
+                _bandwidthBudget = _subnetPolicy.maxBytesPerSecond;
+            }
+            if (_bandwidthBudget <= 0) {
+                if (!stream->budgetPending) {
+                    stream->budgetPending = true;
+                    const qint64 delay = qMax<qint64>(50, 1000 - (now - _bandwidthStamp));
+                    QTimer::singleShot(static_cast<int>(delay), this, [this, id] { pump(id); });
+                }
+                return;
+            }
+            want = qMin<qint64>(want, _bandwidthBudget);
+        }
+
         const QByteArray chunk = stream->sock->read(want);
         if (chunk.isEmpty())
             break;
+
+        consumeBandwidth(stream, chunk.size());
+        kickIdleTimer(stream);
 
         sendData(id, chunk);
         stream->unacked += chunk.size();

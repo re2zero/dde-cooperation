@@ -6,11 +6,15 @@
 
 #include "subnetforwardproxy.h"
 #include "subnetforwardrules.h"
+#include "sessionproto.h"
 #include "tunnelmanager.h"
+#include "tunnelproto.h"
 
 #include <QAbstractSocket>
 #include <QElapsedTimer>
 #include <QHostAddress>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QSignalSpy>
 #include <QTcpServer>
 #include <QTcpSocket>
@@ -41,6 +45,61 @@ quint16 startEchoServer(QTcpServer &server)
         }
     });
     return server.serverPort();
+}
+
+QByteArray makeOpenPayload(quint32 id, const QString &service, const QString &token,
+                           const QString &dst = QString())
+{
+    QJsonObject object;
+    object.insert(QStringLiteral("stream"), static_cast<double>(id));
+    object.insert(QStringLiteral("service"), service);
+    object.insert(QStringLiteral("token"), token);
+    if (!dst.isEmpty())
+        object.insert(QStringLiteral("dst"), dst);
+    return QJsonDocument(object).toJson(QJsonDocument::Compact);
+}
+
+// Records every frame a manager emits so tests can inspect its answers
+// without a peer on the other side.
+struct FrameSink {
+    QList<QPair<int, QByteArray>> frames;
+
+    TunnelManager::SendHandler handler()
+    {
+        return [this](const QString &, int mask, const QByteArray &payload) {
+            frames.append(qMakePair(mask, payload));
+        };
+    }
+};
+
+bool lastAck(const FrameSink &sink, bool *ok, QString *reason)
+{
+    for (int i = sink.frames.size() - 1; i >= 0; --i) {
+        if (sink.frames.at(i).first != TUNNEL_OPEN_ACK)
+            continue;
+        const QJsonDocument document = QJsonDocument::fromJson(sink.frames.at(i).second);
+        if (!document.isObject())
+            return false;
+        if (ok)
+            *ok = document.object().value(QStringLiteral("ok")).toBool();
+        if (reason)
+            *reason = document.object().value(QStringLiteral("reason")).toString();
+        return true;
+    }
+    return false;
+}
+
+// Stand-in for the transparent proxy wiring: every accepted socket is
+// attached to a dynamic destination stream toward "target".
+void acceptIntoDynamicStream(QTcpServer &proxy, TunnelManager &dialer,
+                             const QString &dstTemplate)
+{
+    QObject::connect(&proxy, &QTcpServer::newConnection, &proxy, [&proxy, &dialer, dstTemplate] {
+        while (QTcpSocket *socket = proxy.nextPendingConnection()) {
+            const quint32 id = dialer.openDynamicStream(dstTemplate, socket);
+            EXPECT_NE(id, 0u);
+        }
+    });
 }
 
 SubnetForwardRules::RuleSpec sampleSpec()
@@ -344,4 +403,156 @@ TEST(SubnetForwardProxyTest, StartReplacesThePreviousListener)
 
     proxy.stop();
     b.stopAll();
+}
+
+// ---------------------------------------------------------------------------
+// policy limits
+// ---------------------------------------------------------------------------
+
+TEST(SubnetForwardPolicyLimitsTest, DialTimeoutOverrideAppliesToDynamicTargets)
+{
+    TunnelManager a;
+    a.setPeer(QStringLiteral("B"));
+    FrameSink sink;
+    a.setSendHandler(sink.handler());
+
+    SubnetForwardPolicy policy;
+    policy.allowedNetworks = QStringList { QStringLiteral("0.0.0.0/0") };
+    policy.dialTimeoutMs = 250;
+    ASSERT_TRUE(a.setSubnetForwardPolicy(policy));
+
+    // 203.0.113.x is reserved and unreachable: with the default timeout the
+    // answer would take five seconds, the override must beat it clearly.
+    QElapsedTimer timer;
+    timer.start();
+    a.onTunnelMessage(TUNNEL_OPEN,
+                      makeOpenPayload(1101, TunnelManager::kSubnetForwardService,
+                                      QStringLiteral("tok"), QStringLiteral("203.0.113.1:80")),
+                      QStringLiteral("B"));
+    bool ok = true;
+    QString reason;
+    ASSERT_TRUE(waitFor([&] { return lastAck(sink, &ok, &reason); }, 2000));
+    EXPECT_FALSE(ok);
+    EXPECT_EQ(reason, QStringLiteral("connect timeout"));
+    EXPECT_LT(timer.elapsed(), 2000);
+    EXPECT_TRUE(a._streams.isEmpty());
+
+    a.stopAll();
+}
+
+TEST(SubnetForwardPolicyLimitsTest, IdleTimeoutClosesSilentStreams)
+{
+    QTcpServer echo;
+    const quint16 echoPort = startEchoServer(echo);
+    ASSERT_NE(echoPort, 0);
+
+    TunnelManager a;
+    TunnelManager b;
+    a.setPeer(QStringLiteral("B"));
+    b.setPeer(QStringLiteral("A"));
+    SubnetForwardPolicy policy;
+    policy.allowedNetworks = QStringList { QStringLiteral("127.0.0.0/8") };
+    policy.idleTimeoutMs = 400;
+    ASSERT_TRUE(a.setSubnetForwardPolicy(policy));
+    a.setSendHandler([&b](const QString &, int mask, const QByteArray &payload) {
+        b.onTunnelMessage(mask, payload, QStringLiteral("A"));
+    });
+    b.setSendHandler([&a](const QString &, int mask, const QByteArray &payload) {
+        a.onTunnelMessage(mask, payload, QStringLiteral("B"));
+    });
+
+    QTcpServer proxy;
+    ASSERT_TRUE(proxy.listen(QHostAddress::LocalHost, 0));
+    acceptIntoDynamicStream(proxy, b, QStringLiteral("127.0.0.1:%1").arg(echoPort));
+
+    QTcpSocket client;
+    client.connectToHost(QHostAddress::LocalHost, proxy.serverPort());
+    QTRY_COMPARE_WITH_TIMEOUT(client.state(), QAbstractSocket::ConnectedState, 3000);
+    client.write(QByteArrayLiteral("ping"));
+    QTRY_VERIFY_WITH_TIMEOUT(client.bytesAvailable() >= 4, 3000);
+    client.readAll();
+
+    // Silent after the exchange: the idle timer must tear the stream down on
+    // both sides.
+    QSignalSpy closedA(&a, &TunnelManager::streamClosed);
+    QTRY_VERIFY_WITH_TIMEOUT(closedA.count() > 0, 3000);
+    EXPECT_EQ(closedA.at(0).at(1).toString(), QStringLiteral("idle timeout"));
+    QTRY_COMPARE_WITH_TIMEOUT(client.state(), QAbstractSocket::UnconnectedState, 3000);
+    EXPECT_TRUE(a._streams.isEmpty());
+    EXPECT_TRUE(b._streams.isEmpty());
+
+    b.stopAll();
+    a.stopAll();
+}
+
+TEST(SubnetForwardPolicyLimitsTest, BandwidthLimitPacesTheRelay)
+{
+    QTcpServer echo;
+    const quint16 echoPort = startEchoServer(echo);
+    ASSERT_NE(echoPort, 0);
+
+    TunnelManager a;
+    TunnelManager b;
+    a.setPeer(QStringLiteral("B"));
+    b.setPeer(QStringLiteral("A"));
+    SubnetForwardPolicy policy;
+    policy.allowedNetworks = QStringList { QStringLiteral("127.0.0.0/8") };
+    policy.maxBytesPerSecond = 96 * 1024;
+    ASSERT_TRUE(a.setSubnetForwardPolicy(policy));
+    a.setSendHandler([&b](const QString &, int mask, const QByteArray &payload) {
+        b.onTunnelMessage(mask, payload, QStringLiteral("A"));
+    });
+    b.setSendHandler([&a](const QString &, int mask, const QByteArray &payload) {
+        a.onTunnelMessage(mask, payload, QStringLiteral("B"));
+    });
+
+    QTcpServer proxy;
+    ASSERT_TRUE(proxy.listen(QHostAddress::LocalHost, 0));
+    acceptIntoDynamicStream(proxy, b, QStringLiteral("127.0.0.1:%1").arg(echoPort));
+
+    QTcpSocket client;
+    client.connectToHost(QHostAddress::LocalHost, proxy.serverPort());
+    QTRY_COMPARE_WITH_TIMEOUT(client.state(), QAbstractSocket::ConnectedState, 3000);
+
+    const QByteArray large(512 * 1024, 'q');
+    client.write(large);
+
+    // The pace is roughly the configured rate: clearly above zero, clearly
+    // below the full amount after a fraction of the transfer time. Loose
+    // bounds keep the test robust on a loaded machine.
+    QTest::qWait(1500);
+    const qint64 received = client.bytesAvailable();
+    EXPECT_GT(received, qint64(1024));
+    EXPECT_LT(received, qint64(256 * 1024));
+
+    QTRY_VERIFY_WITH_TIMEOUT(client.bytesAvailable() >= large.size(), 15000);
+    EXPECT_EQ(client.readAll(), large);
+
+    b.stopAll();
+    a.stopAll();
+}
+
+TEST(SubnetForwardPolicyLimitsTest, InvalidLimitsAreRejected)
+{
+    TunnelManager a;
+    a.setPeer(QStringLiteral("B"));
+
+    SubnetForwardPolicy policy;
+    policy.allowedNetworks = QStringList { QStringLiteral("127.0.0.0/8") };
+    policy.maxStreams = -1;
+    EXPECT_FALSE(a.setSubnetForwardPolicy(policy));
+    policy.maxStreams = 16;
+    policy.maxBytesPerSecond = -5;
+    EXPECT_FALSE(a.setSubnetForwardPolicy(policy));
+    policy.maxBytesPerSecond = 0;
+    policy.idleTimeoutMs = -1;
+    EXPECT_FALSE(a.setSubnetForwardPolicy(policy));
+    policy.idleTimeoutMs = 0;
+    policy.dialTimeoutMs = -1;
+    EXPECT_FALSE(a.setSubnetForwardPolicy(policy));
+    policy.dialTimeoutMs = 10 * 60 * 1000;
+    EXPECT_FALSE(a.setSubnetForwardPolicy(policy));
+
+    // Nothing was installed.
+    EXPECT_FALSE(a._subnetForward);
 }
