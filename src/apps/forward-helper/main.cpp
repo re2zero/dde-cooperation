@@ -32,7 +32,7 @@ extern "C" void handleTermination(int)
 int main(int argc, char *argv[])
 {
     QCoreApplication app(argc, argv);
-    app.setApplicationName(QStringLiteral("dde-cooperation-forward-helper"));
+    app.setApplicationName(QStringLiteral("forward-helper"));
     app.setOrganizationName(QStringLiteral("UnionTech"));
 
     ForwardHelperService service;
