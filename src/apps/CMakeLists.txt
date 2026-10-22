@@ -6,5 +6,8 @@ endif()
 
 add_subdirectory(data-transfer)
 
+# 特权子网转发助手（system bus 服务）
+add_subdirectory(forward-helper)
+
 # launcher
 # add_subdirectory("launcher")

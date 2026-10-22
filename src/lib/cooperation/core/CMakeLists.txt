@@ -46,6 +46,7 @@ FILE(GLOB PLUGIN_FILES
     "${CMAKE_CURRENT_SOURCE_DIR}/share/*"
     "${CMAKE_CURRENT_SOURCE_DIR}/net/cooconstrants.h"
     "${CMAKE_CURRENT_SOURCE_DIR}/net/networkutil*"
+    "${CMAKE_CURRENT_SOURCE_DIR}/net/subnetforward/*"
     "${CMAKE_CURRENT_SOURCE_DIR}/net/helper/sharehelper*"
     "${CMAKE_CURRENT_SOURCE_DIR}/net/helper/transferhelper*"
     "${CMAKE_CURRENT_SOURCE_DIR}/net/helper/dialogs/*"

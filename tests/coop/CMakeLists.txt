@@ -22,6 +22,7 @@ file(GLOB COOP_SRC
     "${CD}/discover/*.cpp"
     "${CD}/share/*.cpp"
     "${CD}/net/networkutil*.cpp"
+    "${CD}/net/subnetforward/*.cpp"
     "${CD}/net/helper/sharehelper*.cpp"
     "${CD}/net/helper/transferhelper*.cpp"
     "${CD}/net/helper/dialogs/*.cpp"
@@ -65,6 +66,7 @@ add_executable(coop_tests ${COOP_SRC}
     ${CMAKE_CURRENT_SOURCE_DIR}/compatstruct_test.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/phonehelper_test.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/networkutil_stub_test.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/subnetforward_controller_test.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/taskdialog_test.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/commandparser_test.cpp
     ${CMAKE_SOURCE_DIR}/tests/session_core/protoendpoint_test.cpp

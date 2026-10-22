@@ -1,0 +1,4 @@
+[D-BUS Service]
+Name=cn.uniontech.cooperation.forward
+Exec=@FORWARD_HELPER_EXEC@
+User=root

@@ -16,6 +16,7 @@
 #include "helper/transferhelper.h"
 #include "helper/sharehelper.h"
 #include "share/sharecooperationservicemanager.h"
+#include "subnetforward/subnetforwardcontroller.h"
 #ifdef ENABLE_PHONE
 #include "helper/phonehelper.h"
 #endif
@@ -54,6 +55,12 @@ NetworkUtilPrivate::NetworkUtilPrivate(NetworkUtil *qq)
                                    UNI_SHARE_SERVER_PORT);
     connect(sessionManager, &SessionManager::tunnelMessageReceived,
             tunnelManager, &TunnelManager::onTunnelMessage, Qt::QueuedConnection);
+
+    // Local interception lifecycle. Activation happens only after the
+    // capability negotiation (ApplyMessage) confirmed that both peers
+    // support subnet-forward; teardown runs on session loss, on stop and in
+    // the destructor so no rule or listener outlives the cooperation.
+    subnetForward = new SubnetForwardController(tunnelManager, this);
 
     // Transfer services are temporary: the sender registers its file server,
     // the receiver opens a loopback forward for the announced service.
@@ -307,6 +314,11 @@ NetworkUtilPrivate::NetworkUtilPrivate(NetworkUtil *qq)
 NetworkUtilPrivate::~NetworkUtilPrivate()
 {
     DLOG << "NetworkUtilPrivate destructor";
+    // Tear the interception down before the session manager goes away: the
+    // helper removes its redirect rules and the proxy closes its listener.
+    if (subnetForward)
+        subnetForward->deactivate(QStringLiteral("app exit"));
+
     // Tear the tunnel down while the session manager is still alive, and stop
     // it from trying to send CLOSE frames during shutdown.
     if (sessionManager)
@@ -342,6 +354,10 @@ void NetworkUtilPrivate::handleConnectStatus(int result, QString reason)
         && (reason == tunnelManager->peer()
             || (!tunnelManager->peerRemote().isEmpty() && reason == tunnelManager->peerRemote()))
         && (result == -1 || result == -2 || result == -3 || result == 110 || result == 113)) {
+        // The tunnel peer is gone: the forwarded networks must fall back to
+        // direct connectivity immediately.
+        if (subnetForward)
+            subnetForward->deactivate(QStringLiteral("session lost"));
         tunnelManager->onPeerDisconnected();
     }
 
@@ -1123,6 +1139,9 @@ QString NetworkUtil::deviceInfoStr()
 void NetworkUtil::stop()
 {
     DLOG << "Stopping NetworkUtil";
+    if (d->subnetForward)
+        d->subnetForward->deactivate(QStringLiteral("stopped"));
+
     if (d->tunnelManager) {
         d->tunnelManager->stopAll();
         d->tunnelManager->setPeer(QString());

@@ -17,6 +17,7 @@ class TunnelManager;
 namespace cooperation_core {
 
 class NetworkUtil;
+class SubnetForwardController;
 class NetworkUtilPrivate : public QObject
 {
     friend class NetworkUtil;
@@ -43,6 +44,7 @@ private:
     NetworkUtil *q { nullptr };
     SessionManager *sessionManager { nullptr };
     TunnelManager *tunnelManager { nullptr };
+    SubnetForwardController *subnetForward { nullptr };
 
     QString confirmTargetAddress {""};   // remote ip address
     QString storageRoot = {};   //storage dir config
