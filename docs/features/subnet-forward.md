@@ -29,22 +29,31 @@ B（被拦截侧，10.8.15.x）                     A（服务侧，10.8.12.90�
 | 配置 | `src/lib/cooperation/core/net/subnetforward/subnetforwardconfig.*` | 读配置组，产出两种策略（服务侧带跳板防护） |
 | 特权助手 | `src/apps/forward-helper/` | system bus 服务（D-Bus 激活，root）；polkit 授权后执行 nft/iptables |
 
-## 配置（cooperation_settings，组 `SubnetForward`，运行时生效，v1 无 UI）
+## 配置（设置对话框 / cooperation_settings，运行时生效）
+
+常规开关经**设置对话框**配置（"子网转发"分组）：总开关、"为对端提供转发"
+（A 角色）、"使用对端的子网"（B 角色）、转发网段（CIDR，逗号分隔，非法
+输入就地提示并回退）、允许的对端 IP（设备白名单）、"转发到非本机网段"
+（跳板防护豁免开关，默认关）。总开关关闭时其余控件置灰。控件直写
+ConfigManager，经文件监听对运行中的会话立即生效。
+
+下表键与对话框控件的对应关系；**端口与限额类键仍走配置文件**（对话框
+不暴露）：
 
 | 键 | 默认 | 说明 |
 | --- | --- | --- |
-| `Enabled` | false | 功能总开关 |
+| `Enabled` | false | 功能总开关（对话框总开关） |
 | `UsePeerSubnet` | false | B 角色：允许本机出方向流量经对端转发 |
 | `ServePeer` | false | A 角色：愿意为对端提供转发 |
 | `Networks` | 空 | CIDR 列表；**空 = 功能不生效** |
-| `AllowedHosts` | 空 | 网段内再限 IP；空 = 整网段 |
-| `AllowedPorts` | 空 | 端口/范围（`22`、`80,443`、`60000-60010`）；空 = 除拒绝外全部 |
-| `DeniedPorts` | 51598 | 拒绝端口表；**51598 强制注入**（防会话自环） |
+| `AllowedHosts` | 空 | 网段内再限 IP；空 = 整网段（配置文件） |
+| `AllowedPorts` | 空 | 端口/范围（`22`、`80,443`、`60000-60010`）；空 = 除拒绝外全部（配置文件） |
+| `DeniedPorts` | 51598 | 拒绝端口表；**51598 强制注入**（防会话自环）（配置文件） |
 | `DeviceWhitelist` | 空 | 对端 IPv4 列表；**语义已定死：空 = 拒绝所有对端**（fail-closed，列出至少一个地址即为运维显式决定） |
-| `MaxStreams` | 16 | 并发流上限（对齐既有 service 上限） |
-| `MaxBytesPerSecond` | 0 | 全局带宽上限（0 = 不限；作用于目标→对端方向，超支即停读，借 TCP 背压限速） |
-| `IdleTimeoutMs` | 0 | 空闲流超时（0 = 不启用） |
-| `DialTimeoutMs` | 0 | 拨号超时（0 = 默认 5s） |
+| `MaxStreams` | 16 | 并发流上限（对齐既有 service 上限，配置文件） |
+| `MaxBytesPerSecond` | 0 | 全局带宽上限（0 = 不限；作用于目标→对端方向，超支即停读，借 TCP 背压限速，配置文件） |
+| `IdleTimeoutMs` | 0 | 空闲流超时（0 = 不启用，配置文件） |
+| `DialTimeoutMs` | 0 | 拨号超时（0 = 默认 5s，配置文件） |
 | `AllowNonLocalNetworks` | false | **跳板防护**：默认服务策略只保留包含本机地址的网段；转发到其他网段属高危，须显式打开 |
 
 示例（A 机为 10.8.12.90）：
@@ -112,8 +121,9 @@ B 机：`Enabled=true`、`UsePeerSubnet=true`、`Networks=10.8.12.0/24`、
 
 ## 真机回归清单（单向网络：A=10.8.12.90 → B=10.8.15.x 单向可达）
 
-前置：两机装包（helper、dbus service、polkit policy 就位）；按上文示例配置；
-`systemctl` 无需操作（D-Bus 激活）。
+前置：两机装包（helper、dbus service、polkit policy 就位）；按上文示例写
+配置或在两机设置对话框勾选对应开关并填网段/白名单；`systemctl` 无需操作
+（D-Bus 激活）。
 
 1. **基本连通**：A 主动连 B 建立协同（barrier）。B 上
    `curl -m5 http://10.8.12.5:PORT`、`ssh 10.8.12.5`（非 A 本机）连通；

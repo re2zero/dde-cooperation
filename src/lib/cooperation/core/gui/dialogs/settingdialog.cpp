@@ -10,6 +10,7 @@
 #include "configs/dconfig/dconfigmanager.h"
 #include "common/qtcompat.h"
 #include "common/log.h"
+#include "manager/subnetforwardutil.h"
 
 #ifdef linux
 #    include <DPalette>
@@ -18,6 +19,7 @@
 #include <QPainter>
 #include <QEvent>
 #include <QDir>
+#include <QHostAddress>
 #include <QStandardPaths>
 #include <QToolTip>
 #include <QScrollBar>
@@ -67,7 +69,9 @@ SettingDialogPrivate::~SettingDialogPrivate()
 void SettingDialogPrivate::initWindow()
 {
     DLOG << "Initializing setting dialog window";
-    q->setFixedSize(650, 584);
+    // Tall enough to show the subnet forwarding section; the content area
+    // scrolls on smaller screens.
+    q->setFixedSize(650, 668);
 
     contentLayout = new QVBoxLayout;
     contentLayout->setContentsMargins(10, 0, 10, 0);
@@ -125,6 +129,7 @@ void SettingDialogPrivate::initWindow()
     createDeviceShareWidget();
     createClipboardShareWidget();
     createTransferWidget();
+    createSubnetForwardWidget();
 }
 
 void SettingDialogPrivate::createBasicWidget()
@@ -321,6 +326,252 @@ void SettingDialogPrivate::createClipboardShareWidget()
     contentLayout->addSpacing(6);
     contentLayout->addWidget(tipLabel);
     contentLayout->addSpacing(12);
+}
+
+namespace {
+CooperationLabel *makeTipLabel(const QString &text, QWidget *parent, const QFont &tipFont)
+{
+    CooperationLabel *label = new CooperationLabel(text, parent);
+    auto margins = label->contentsMargins();
+    margins.setLeft(10);
+    label->setContentsMargins(margins);
+    label->setWordWrap(true);
+    CooperationGuiHelper::setAutoFont(label, 12, tipFont.weight());
+#ifdef linux
+    label->setForegroundRole(DTK_GUI_NAMESPACE::DPalette::TextTips);
+#else
+    QList<QColor> colorList { QColor(0, 0, 0, static_cast<int>(255 * 0.5)),
+                              QColor(192, 192, 192) };
+    CooperationGuiHelper::instance()->autoUpdateTextColor(label, colorList);
+#endif
+    return label;
+}
+}
+
+void SettingDialogPrivate::createSubnetForwardWidget()
+{
+    DLOG << "Creating subnet forward widget";
+
+    CooperationLabel *sectionLabel = new CooperationLabel(tr("Subnet forwarding"), q);
+    auto cm = sectionLabel->contentsMargins();
+    cm.setLeft(10);
+    sectionLabel->setContentsMargins(cm);
+    CooperationGuiHelper::setAutoFont(sectionLabel, 16, QFont::DemiBold);
+
+    subnetForwardSwitchBtn = new CooperationSwitchButton(q);
+    connect(subnetForwardSwitchBtn, &CooperationSwitchButton::clicked,
+            this, &SettingDialogPrivate::onSubnetForwardEnabledClicked);
+    SettingItem *masterItem = new SettingItem(q);
+    masterItem->setItemInfo(tr("Enable subnet forwarding"), subnetForwardSwitchBtn);
+
+    subnetForwardServeBtn = new CooperationSwitchButton(q);
+    connect(subnetForwardServeBtn, &CooperationSwitchButton::clicked,
+            this, &SettingDialogPrivate::onSubnetForwardServeClicked);
+    SettingItem *serveItem = new SettingItem(q);
+    serveItem->setItemInfo(tr("Forward for the peer"), subnetForwardServeBtn);
+
+    subnetForwardUseBtn = new CooperationSwitchButton(q);
+    connect(subnetForwardUseBtn, &CooperationSwitchButton::clicked,
+            this, &SettingDialogPrivate::onSubnetForwardUseClicked);
+    SettingItem *useItem = new SettingItem(q);
+    useItem->setItemInfo(tr("Use the peer's subnet"), subnetForwardUseBtn);
+
+    subnetForwardNetworksEdit = new CooperationLineEdit(q);
+    subnetForwardNetworksEdit->setFixedWidth(280);
+    connect(subnetForwardNetworksEdit, &CooperationLineEdit::editingFinished,
+            this, &SettingDialogPrivate::onSubnetForwardNetworksEdited);
+    SettingItem *networksItem = new SettingItem(q);
+    networksItem->setItemInfo(tr("Forwarding networks"), subnetForwardNetworksEdit);
+
+    subnetForwardWhitelistEdit = new CooperationLineEdit(q);
+    subnetForwardWhitelistEdit->setFixedWidth(280);
+    connect(subnetForwardWhitelistEdit, &CooperationLineEdit::editingFinished,
+            this, &SettingDialogPrivate::onSubnetForwardWhitelistEdited);
+    SettingItem *whitelistItem = new SettingItem(q);
+    whitelistItem->setItemInfo(tr("Allowed peers"), subnetForwardWhitelistEdit);
+
+    subnetForwardNonLocalBtn = new CooperationSwitchButton(q);
+    connect(subnetForwardNonLocalBtn, &CooperationSwitchButton::clicked,
+            this, &SettingDialogPrivate::onSubnetForwardNonLocalClicked);
+    SettingItem *nonLocalItem = new SettingItem(q);
+    nonLocalItem->setItemInfo(tr("Forward to non-local networks"), subnetForwardNonLocalBtn);
+
+    contentLayout->addWidget(sectionLabel);
+    contentLayout->addSpacing(12);
+    contentLayout->addWidget(masterItem);
+    contentLayout->addSpacing(6);
+    contentLayout->addWidget(makeTipLabel(
+            tr("Carries TCP traffic of the configured networks through the cooperation "
+               "session while collaborating. UDP and DNS are not covered"),
+            q, tipFont));
+    contentLayout->addSpacing(12);
+    contentLayout->addWidget(serveItem);
+    contentLayout->addSpacing(6);
+    contentLayout->addWidget(makeTipLabel(
+            tr("Dials the configured networks on behalf of the peer while this side "
+               "holds the reachable end of the connection"),
+            q, tipFont));
+    contentLayout->addSpacing(12);
+    contentLayout->addWidget(useItem);
+    contentLayout->addSpacing(6);
+    contentLayout->addWidget(makeTipLabel(
+            tr("Connections to the configured networks are carried through the session "
+               "when the peer allows it, and fall back to direct when the session ends"),
+            q, tipFont));
+    contentLayout->addSpacing(12);
+    contentLayout->addWidget(networksItem);
+    contentLayout->addSpacing(6);
+    contentLayout->addWidget(makeTipLabel(
+            tr("IPv4 networks in CIDR notation separated by commas, for example "
+               "10.8.12.0/24. An empty list disables the feature"),
+            q, tipFont));
+    contentLayout->addSpacing(12);
+    contentLayout->addWidget(whitelistItem);
+    contentLayout->addSpacing(6);
+    contentLayout->addWidget(makeTipLabel(
+            tr("IPv4 addresses of peers that may use this feature with this device, "
+               "separated by commas. An empty list rejects every peer"),
+            q, tipFont));
+    contentLayout->addSpacing(12);
+    contentLayout->addWidget(nonLocalItem);
+    contentLayout->addSpacing(6);
+    contentLayout->addWidget(makeTipLabel(
+            tr("Allows serving subnets this device does not belong to, which turns it "
+               "into a jump host. Keep this off unless the deployment requires it"),
+            q, tipFont));
+    contentLayout->addSpacing(12);
+}
+
+void SettingDialogPrivate::onSubnetForwardEnabledClicked(bool checked)
+{
+    DLOG << "Subnet forwarding setting changed to:" << checked;
+    ConfigManager::instance()->setAppAttribute(AppSettings::SubnetForwardGroup,
+                                               AppSettings::SubnetForwardEnabled, checked);
+    updateSubnetForwardControls();
+}
+
+void SettingDialogPrivate::onSubnetForwardServeClicked(bool checked)
+{
+    DLOG << "Subnet forwarding serve role changed to:" << checked;
+    ConfigManager::instance()->setAppAttribute(AppSettings::SubnetForwardGroup,
+                                               AppSettings::SubnetForwardServePeer, checked);
+}
+
+void SettingDialogPrivate::onSubnetForwardUseClicked(bool checked)
+{
+    DLOG << "Subnet forwarding use role changed to:" << checked;
+    ConfigManager::instance()->setAppAttribute(AppSettings::SubnetForwardGroup,
+                                               AppSettings::SubnetForwardUsePeer, checked);
+}
+
+void SettingDialogPrivate::onSubnetForwardNonLocalClicked(bool checked)
+{
+    DLOG << "Subnet forwarding non-local networks changed to:" << checked;
+    ConfigManager::instance()->setAppAttribute(AppSettings::SubnetForwardGroup,
+                                               AppSettings::SubnetForwardAllowNonLocal, checked);
+}
+
+void SettingDialogPrivate::onSubnetForwardNetworksEdited()
+{
+    const QString text = subnetForwardNetworksEdit->text().trimmed();
+
+    QStringList entries;
+    bool valid = true;
+    if (!text.isEmpty()) {
+        const QStringList parts = text.split(QLatin1Char(','));
+        for (QString part : parts) {
+            part = part.trimmed();
+            if (part.isEmpty())
+                continue;
+            QHostAddress network;
+            int prefix = 0;
+            if (SubnetForward::parseCidr4(part, &network, &prefix)) {
+                entries.append(part);
+            } else {
+                WLOG << "SettingDialog: invalid subnet-forward network entry:"
+                     << part.toStdString();
+                alertEdit(subnetForwardNetworksEdit,
+                          tr("\"%1\" is not a valid IPv4 network (CIDR)").arg(part));
+                valid = false;
+                break;
+            }
+        }
+    }
+
+    if (!valid) {
+        // Revert the visible text to the stored configuration: the dialog
+        // never keeps an unsaveable value around.
+        subnetForwardNetworksEdit->setText(ConfigManager::instance()->appAttribute(
+                AppSettings::SubnetForwardGroup, AppSettings::SubnetForwardNetworks).toString());
+        return;
+    }
+
+    ConfigManager::instance()->setAppAttribute(AppSettings::SubnetForwardGroup,
+                                               AppSettings::SubnetForwardNetworks,
+                                               entries.join(QLatin1Char(',')));
+}
+
+void SettingDialogPrivate::onSubnetForwardWhitelistEdited()
+{
+    const QString text = subnetForwardWhitelistEdit->text().trimmed();
+
+    QStringList entries;
+    bool valid = true;
+    if (!text.isEmpty()) {
+        const QStringList parts = text.split(QLatin1Char(','));
+        for (QString part : parts) {
+            part = part.trimmed();
+            if (part.isEmpty())
+                continue;
+            if (SubnetForward::isIPv4Literal(part)) {
+                entries.append(part);
+            } else {
+                WLOG << "SettingDialog: invalid subnet-forward whitelist entry:"
+                     << part.toStdString();
+                alertEdit(subnetForwardWhitelistEdit,
+                          tr("\"%1\" is not a valid IPv4 address").arg(part));
+                valid = false;
+                break;
+            }
+        }
+    }
+
+    if (!valid) {
+        subnetForwardWhitelistEdit->setText(ConfigManager::instance()->appAttribute(
+                AppSettings::SubnetForwardGroup, AppSettings::SubnetForwardDeviceWhitelist).toString());
+        return;
+    }
+
+    ConfigManager::instance()->setAppAttribute(AppSettings::SubnetForwardGroup,
+                                               AppSettings::SubnetForwardDeviceWhitelist,
+                                               entries.join(QLatin1Char(',')));
+}
+
+void SettingDialogPrivate::updateSubnetForwardControls()
+{
+    // With the master switch off the whole feature is inert; make that
+    // visible instead of leaving the roles editable for nothing.
+    const bool enabled = subnetForwardSwitchBtn->isChecked();
+    subnetForwardServeBtn->setEnabled(enabled);
+    subnetForwardUseBtn->setEnabled(enabled);
+    subnetForwardNonLocalBtn->setEnabled(enabled);
+    subnetForwardNetworksEdit->setEnabled(enabled);
+    subnetForwardWhitelistEdit->setEnabled(enabled);
+}
+
+void SettingDialogPrivate::alertEdit(CooperationLineEdit *edit, const QString &message)
+{
+    DLOG << "Setting dialog input alert:" << message.toStdString();
+#ifdef linux
+    // The alert background of a DLineEdit does not paint inside a
+    // DAbstractDialog (see the nameEdit event filter), so only the floating
+    // message is used here.
+    Q_UNUSED(edit)
+    edit->showAlertMessage(message);
+#else
+    Q_UNUSED(edit)
+    QToolTip::showText(QCursor::pos(), message, nullptr);
+#endif
 }
 
 void SettingDialogPrivate::onFindComboBoxValueChanged(int index)
@@ -679,6 +930,34 @@ void SettingDialog::loadConfig()
 
         d->clipShareSwitchBtn->setChecked(true);
     }
+
+    // Subnet forwarding: everything defaults to off, an unconfigured dialog
+    // must not write anything on its own.
+    value = ConfigManager::instance()->appAttribute(AppSettings::SubnetForwardGroup, AppSettings::SubnetForwardEnabled);
+    if (value.isValid()) {
+        d->subnetForwardSwitchBtn->setChecked(value.toBool());
+    } else {
+        DLOG << "SubnetForwardEnabled not found, setting default value";
+        ConfigManager::instance()->setAppAttribute(AppSettings::SubnetForwardGroup, AppSettings::SubnetForwardEnabled, false);
+        d->subnetForwardSwitchBtn->setChecked(false);
+    }
+
+    value = ConfigManager::instance()->appAttribute(AppSettings::SubnetForwardGroup, AppSettings::SubnetForwardServePeer);
+    d->subnetForwardServeBtn->setChecked(value.isValid() ? value.toBool() : false);
+
+    value = ConfigManager::instance()->appAttribute(AppSettings::SubnetForwardGroup, AppSettings::SubnetForwardUsePeer);
+    d->subnetForwardUseBtn->setChecked(value.isValid() ? value.toBool() : false);
+
+    value = ConfigManager::instance()->appAttribute(AppSettings::SubnetForwardGroup, AppSettings::SubnetForwardAllowNonLocal);
+    d->subnetForwardNonLocalBtn->setChecked(value.isValid() ? value.toBool() : false);
+
+    value = ConfigManager::instance()->appAttribute(AppSettings::SubnetForwardGroup, AppSettings::SubnetForwardNetworks);
+    d->subnetForwardNetworksEdit->setText(value.isValid() ? value.toString() : QString());
+
+    value = ConfigManager::instance()->appAttribute(AppSettings::SubnetForwardGroup, AppSettings::SubnetForwardDeviceWhitelist);
+    d->subnetForwardWhitelistEdit->setText(value.isValid() ? value.toString() : QString());
+
+    d->updateSubnetForwardControls();
 }
 
 #ifndef linux

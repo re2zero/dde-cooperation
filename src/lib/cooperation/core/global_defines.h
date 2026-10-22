@@ -114,8 +114,9 @@ inline constexpr char TransHistoryKey[] { "TransHistory" };
 inline constexpr char ConnectHistoryKey[] { "ConnectHistory" };
 inline constexpr char CloseOptionKey[] { "CloseOption" };
 
-// 子网转发（subnet-forward）。v1 只读配置不做 UI，一切默认关闭；运行态一律
-// 不落盘。设备白名单语义见 SubnetForwardConfig：列表为空即拒绝所有对端。
+// 子网转发（subnet-forward）。常规开关经设置对话框配置（SettingDialog），
+// 端口与限额类键走配置文件；一切默认关闭，运行态一律不落盘。设备白名单
+// 语义见 SubnetForwardConfig：列表为空即拒绝所有对端。
 inline constexpr char SubnetForwardGroup[] { "SubnetForward" };
 inline constexpr char SubnetForwardEnabled[] { "Enabled" };                     // 功能总开关
 inline constexpr char SubnetForwardUsePeer[] { "UsePeerSubnet" };               // B 角色：允许本机流量经对端转发

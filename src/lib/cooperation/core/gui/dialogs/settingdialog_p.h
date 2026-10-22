@@ -44,13 +44,23 @@ public Q_SLOTS:
     void onFileChoosed(const QString &path);
     void reportDeviceStatus(const QString &type, bool status);
 
+    void onSubnetForwardEnabledClicked(bool checked);
+    void onSubnetForwardServeClicked(bool checked);
+    void onSubnetForwardUseClicked(bool checked);
+    void onSubnetForwardNonLocalClicked(bool checked);
+    void onSubnetForwardNetworksEdited();
+    void onSubnetForwardWhitelistEdited();
+
 private:
     void initFont();
     void createBasicWidget();
     void createDeviceShareWidget();
     void createTransferWidget();
     void createClipboardShareWidget();
+    void createSubnetForwardWidget();
+    void updateSubnetForwardControls();
     bool checkNameValid();
+    void alertEdit(CooperationLineEdit *edit, const QString &message);
 
 private:
     SettingDialog *q { nullptr };
@@ -64,6 +74,13 @@ private:
     CooperationSwitchButton *devShareSwitchBtn { nullptr };
     CooperationSwitchButton *clipShareSwitchBtn { nullptr };
     FileChooserEdit *chooserEdit { nullptr };
+
+    CooperationSwitchButton *subnetForwardSwitchBtn { nullptr };
+    CooperationSwitchButton *subnetForwardServeBtn { nullptr };
+    CooperationSwitchButton *subnetForwardUseBtn { nullptr };
+    CooperationSwitchButton *subnetForwardNonLocalBtn { nullptr };
+    CooperationLineEdit *subnetForwardNetworksEdit { nullptr };
+    CooperationLineEdit *subnetForwardWhitelistEdit { nullptr };
 
     QStringList findComboBoxInfo;
     QList<QPair<QString, QString>> connectComboBoxInfo;
