@@ -7,7 +7,7 @@
   <vendor>UnionTech Software Technology Co., Ltd.</vendor>
   <vendor_url>https://www.deepin.org</vendor_url>
 
-  <action id="dde.cooperation.forward.setup">
+  <action id="org.deepin.dde.cooperation.forward.setup">
     <description>Set up subnet forwarding rules for Deepin Cooperation</description>
     <description xml:lang="zh_CN">为跨端协同设置子网转发规则</description>
     <message>Deepin Cooperation needs to redirect local subnet traffic through the cooperation session</message>
@@ -19,7 +19,7 @@
     </defaults>
   </action>
 
-  <action id="dde.cooperation.forward.teardown">
+  <action id="org.deepin.dde.cooperation.forward.teardown">
     <description>Remove subnet forwarding rules of Deepin Cooperation</description>
     <description xml:lang="zh_CN">移除跨端协同的子网转发规则</description>
     <message>Deepin Cooperation needs to remove its subnet forwarding rules</message>

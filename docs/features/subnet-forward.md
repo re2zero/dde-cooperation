@@ -114,7 +114,7 @@ B 机：`Enabled=true`、`UsePeerSubnet=true`、`Networks=10.8.12.0/24`、
 ## 限制
 
 - 仅 TCP；UDP/DNS 不覆盖（文档与日志均已明示）。
-- 助手按 polkit 动作授权：`dde.cooperation.forward.{setup,teardown}`，
+- 助手按 polkit 动作授权：`org.deepin.dde.cooperation.forward.{setup,teardown}`，
   活动会话免密（`allow_active=yes`），其余 `auth_admin`；助手不交互授权
   （flags=0，fail-closed）。本地恶意用户若获授权可将流量重定向到自己的
   监听口——与任何本地透明代理一致，属既定信任边界。

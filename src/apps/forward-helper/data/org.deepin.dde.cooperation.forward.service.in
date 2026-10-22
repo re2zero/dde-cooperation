@@ -1,4 +1,4 @@
 [D-BUS Service]
-Name=dde.cooperation.forward
+Name=org.deepin.dde.cooperation.forward
 Exec=@FORWARD_HELPER_EXEC@
 User=root

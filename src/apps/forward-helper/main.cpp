@@ -15,8 +15,8 @@
 #include <unistd.h>
 
 namespace {
-constexpr const char *kServiceName = "dde.cooperation.forward";
-constexpr const char *kObjectPath = "/dde/cooperation/forward";
+constexpr const char *kServiceName = "org.deepin.dde.cooperation.forward";
+constexpr const char *kObjectPath = "/org/deepin/dde/cooperation/forward";
 
 int g_signalFds[2] = { -1, -1 };
 
