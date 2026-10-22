@@ -267,7 +267,12 @@ void TunnelManager::setupSocket(Stream *stream)
     connect(socket, &QTcpSocket::disconnected, this, [this, id] {
         destroyStream(id, "socket closed", true);
     });
+#if (QT_VERSION >= QT_VERSION_CHECK(5, 15, 0))
     connect(socket, &QTcpSocket::errorOccurred, this, [this, id](QAbstractSocket::SocketError error) {
+#else
+    connect(socket, QOverload<QAbstractSocket::SocketError>::of(&QAbstractSocket::error), this,
+            [this, id](QAbstractSocket::SocketError error) {
+#endif
         Q_UNUSED(error)
         Stream *stream = findStream(id);
         if (!stream)

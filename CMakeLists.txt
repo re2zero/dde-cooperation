@@ -5,6 +5,12 @@ project(dde-cooperation VERSION 0.1 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# GCC 8 (UOS 20) keeps std::filesystem in a separate archive, GCC >= 9 folds it
+# into libstdc++ and the separate archive may no longer exist.
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 9.0)
+    set(CMAKE_CXX_STANDARD_LIBRARIES "${CMAKE_CXX_STANDARD_LIBRARIES} -lstdc++fs")
+endif()
+
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 if (NOT WIN32)
