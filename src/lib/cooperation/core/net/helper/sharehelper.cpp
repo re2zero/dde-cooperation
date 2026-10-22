@@ -567,6 +567,11 @@ void ShareHelper::handleConnectResult(int result, const QString &clientprint)
         // Tell the peer that the barrier server is up. It will probe the port
         // first and only fall back to the reverse tunnel when it is blocked.
         NetworkUtil::instance()->setTunnelPeer(d->targetDeviceInfo->ipAddress());
+        // Activation is symmetric: the share initiator may be the side that
+        // needs interception just as well (the peer announced its serving
+        // willingness in the APPLY_SHARE_RESULT). A refusal is logged, so a
+        // silent no-op stays visible.
+        NetworkUtil::instance()->activateSubnetForward(d->targetDeviceInfo->ipAddress());
         const QString barrierTarget = d->targetDeviceInfo->ipAddress();
         QTimer::singleShot(200, this, [barrierTarget] {
             NetworkUtil::instance()->sendBarrierReady(barrierTarget);

@@ -1070,9 +1070,20 @@ bool NetworkUtil::activateSubnetForward(const QString &peerIp)
 {
     auto &config = SubnetForwardConfig::instance();
     // Both the local configuration and the negotiated peer offer must agree,
-    // otherwise interception would black-hole the configured networks.
-    if (!config.useReady(peerIp) || !d->peerSubnetForwardOffered.load())
+    // otherwise interception would black-hole the configured networks. Every
+    // refusal is logged: a silent no-op here once left a deployment without
+    // any trace of why the feature never activated.
+    if (!config.useReady(peerIp)) {
+        WLOG << "SubnetForward: activation refused for:" << peerIp.toStdString()
+             << "local use configuration incomplete (switches, networks or"
+             << "device whitelist)";
         return false;
+    }
+    if (!d->peerSubnetForwardOffered.load()) {
+        WLOG << "SubnetForward: activation refused for:" << peerIp.toStdString()
+             << "peer did not offer forwarding in the share handshake";
+        return false;
+    }
 
     d->subnetForward->configure(config.usingPolicy());
     return d->subnetForward->activate(peerIp);
