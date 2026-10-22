@@ -706,8 +706,14 @@ void ShareHelperPrivate::probeBarrierServer(const QString &ip, int attemptsLeft)
         startClientBarrier();
     });
 
+    // Error handling function
+#if (QT_VERSION >= QT_VERSION_CHECK(5, 15, 0))
     connect(socket, &QTcpSocket::errorOccurred, this,
             [this, ip, attemptsLeft, finish](QAbstractSocket::SocketError error) {
+#else
+    connect(socket, QOverload<QAbstractSocket::SocketError>::of(&QAbstractSocket::error), this,
+            [this, ip, attemptsLeft, finish](QAbstractSocket::SocketError error) {
+#endif
         Q_UNUSED(error)
         if (!finish())
             return;
