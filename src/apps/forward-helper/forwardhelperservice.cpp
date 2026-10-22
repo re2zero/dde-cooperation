@@ -230,12 +230,17 @@ bool ForwardHelperService::authorize(const QString &action, QString *error)
     const QVariant first = reply.arguments().at(0);
     if (first.userType() == QMetaType::Bool) {
         authorized = first.toBool();
-    } else {
-        QDBusArgument result = first.value<QDBusArgument>();
+    } else if (first.userType() == qMetaTypeId<QDBusArgument>()) {
+        // Hold the argument as const so beginStructure() resolves to the
+        // reading overload: the non-const one is the marshalling API and
+        // aborts libdbus on a reply ("write from a read-only object").
+        const QDBusArgument result = first.value<QDBusArgument>();
         result.beginStructure();
         result >> authorized;
         result >> challenge;
         result.endStructure();
+    } else if (error) {
+        *error = QStringLiteral("unexpected polkit reply type: %1").arg(first.typeName());
     }
     if (!authorized && error)
         *error = QStringLiteral("polkit denied %1 for %2").arg(action, caller);
