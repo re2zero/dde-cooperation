@@ -205,7 +205,7 @@ inline QString nftRuleset(const RuleSpec &spec)
 
     for (const QString &network : spec.networks) {
         if (spec.allowedPorts.isEmpty()) {
-            text += QStringLiteral("add rule ip %1 output ip daddr %2 tcp redirect to :%3\n")
+            text += QStringLiteral("add rule ip %1 output ip daddr %2 meta l4proto tcp redirect to :%3\n")
                             .arg(table)
                             .arg(network)
                             .arg(spec.proxyPort);

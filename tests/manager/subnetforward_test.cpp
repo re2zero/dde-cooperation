@@ -138,8 +138,8 @@ TEST(SubnetForwardRulesTest, NftRulesetExcludesLoopbackAndSessionBeforeRedirect)
     EXPECT_LT(denied, redirect);
 
     // One redirect per allowed network.
-    EXPECT_NE(ruleset.indexOf(QStringLiteral("ip daddr 10.8.12.0/24 tcp redirect to :34567")), -1);
-    EXPECT_NE(ruleset.indexOf(QStringLiteral("ip daddr 192.168.30.0/25 tcp redirect to :34567")), -1);
+    EXPECT_NE(ruleset.indexOf(QStringLiteral("ip daddr 10.8.12.0/24 meta l4proto tcp redirect to :34567")), -1);
+    EXPECT_NE(ruleset.indexOf(QStringLiteral("ip daddr 192.168.30.0/25 meta l4proto tcp redirect to :34567")), -1);
 }
 
 TEST(SubnetForwardRulesTest, NftRulesetNarrowsAllowedPorts)
