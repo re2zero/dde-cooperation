@@ -9,11 +9,13 @@
 #include <QDBusArgument>
 #include <QDBusConnection>
 #include <QDBusMessage>
+#include <QDBusMetaType>
 #include <QDBusServiceWatcher>
 #include <QDBusVariant>
 #include <QDebug>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QMap>
 #include <QVariant>
 
 using namespace SubnetForwardRules;
@@ -31,6 +33,9 @@ constexpr int kPolkitTimeoutMs = 5000;
 ForwardHelperService::ForwardHelperService(QObject *parent)
     : QObject(parent)
 {
+    // QMap<QString, QString> marshals as "a{ss}", polkit's details type; it
+    // must be registered before any CheckAuthorization carries one.
+    qDBusRegisterMetaType<QMap<QString, QString>>();
 }
 
 ForwardHelperService::~ForwardHelperService()
@@ -194,9 +199,13 @@ bool ForwardHelperService::authorize(const QString &action, QString *error)
     QDBusMessage check = QDBusMessage::createMethodCall(kPolkitService, kPolkitPath,
                                                         kPolkitInterface,
                                                         QStringLiteral("CheckAuthorization"));
+    // polkit wants the details as "a{ss}": a QMap<QString, QString> marshals
+    // exactly to that, while a QVariantMap would marshal as a{sv} and make
+    // polkit reject the whole call with InvalidArgs.
+    QMap<QString, QString> emptyDetails;
     check << QVariant::fromValue(subject)
           << action
-          << QVariantMap()
+          << QVariant::fromValue(emptyDetails)
           << 0u   // no interactive authorization: fail closed instead of prompting
           << QString();
     const QDBusMessage reply = QDBusConnection::systemBus().call(check, QDBus::Block,
