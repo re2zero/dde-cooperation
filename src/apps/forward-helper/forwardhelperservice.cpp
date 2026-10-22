@@ -23,8 +23,8 @@ namespace {
 constexpr const char *kPolkitService = "org.freedesktop.Polkit1.Authority";
 constexpr const char *kPolkitPath = "/org/freedesktop/Polkit1/Authority";
 constexpr const char *kPolkitInterface = "org.freedesktop.Polkit1.Authority";
-constexpr const char *kActionSetup = "cn.uniontech.cooperation.forward.setup";
-constexpr const char *kActionTeardown = "cn.uniontech.cooperation.forward.teardown";
+constexpr const char *kActionSetup = "dde.cooperation.forward.setup";
+constexpr const char *kActionTeardown = "dde.cooperation.forward.teardown";
 constexpr int kPolkitTimeoutMs = 5000;
 }
 

@@ -14,9 +14,9 @@
 #include <QDBusMessage>
 
 namespace {
-constexpr const char *kHelperService = "cn.uniontech.cooperation.forward";
-constexpr const char *kHelperPath = "/cn/uniontech/cooperation/forward";
-constexpr const char *kHelperInterface = "cn.uniontech.cooperation.forward";
+constexpr const char *kHelperService = "dde.cooperation.forward";
+constexpr const char *kHelperPath = "/dde/cooperation/forward";
+constexpr const char *kHelperInterface = "dde.cooperation.forward";
 // The helper recreates its rules idempotently, so the lease renewal doubles
 // as a self-healing re-apply after the helper itself was restarted.
 constexpr int kRenewIntervalMs = 15 * 1000;

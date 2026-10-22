@@ -18,6 +18,6 @@ usr/share/applications/dde-cooperation.desktop
 usr/share/deepin-log-viewer/deepin-log.conf.d/dde-cooperation.json
 usr/share/deepin-manual/manual-assets/application/dde-cooperation
 usr/libexec/dde-cooperation/forward-helper
-usr/share/dbus-1/system-services/cn.uniontech.cooperation.forward.service
-etc/dbus-1/system.d/cn.uniontech.cooperation.forward.conf
-usr/share/polkit-1/actions/cn.uniontech.cooperation.forward.policy
+usr/share/dbus-1/system-services/dde.cooperation.forward.service
+etc/dbus-1/system.d/dde.cooperation.forward.conf
+usr/share/polkit-1/actions/dde.cooperation.forward.policy

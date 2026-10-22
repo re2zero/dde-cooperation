@@ -28,10 +28,10 @@ class ForwardHelperService : public QObject, protected QDBusContext
     Q_OBJECT
     // Without this the ExportAllSlots methods are published under the class
     // name interface (local.forward_helper.ForwardHelperService), while the
-    // callers address cn.uniontech.cooperation.forward - verified on a live
+    // callers address dde.cooperation.forward - verified on a live
     // bus: the methods existed but every call failed with "no such
     // interface".
-    Q_CLASSINFO("D-Bus Interface", "cn.uniontech.cooperation.forward")
+    Q_CLASSINFO("D-Bus Interface", "dde.cooperation.forward")
 public:
     explicit ForwardHelperService(QObject *parent = nullptr);
     ~ForwardHelperService() override;

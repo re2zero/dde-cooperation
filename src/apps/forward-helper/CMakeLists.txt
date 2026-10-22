@@ -28,12 +28,12 @@ install(TARGETS forward-helper DESTINATION ${EXECUTABLE_INSTALL_DIR})
 
 # D-Bus activation: the helper starts on demand as root.
 set(FORWARD_HELPER_EXEC "${EXECUTABLE_INSTALL_DIR}/forward-helper")
-configure_file(data/cn.uniontech.cooperation.forward.service.in
-               ${CMAKE_CURRENT_BINARY_DIR}/cn.uniontech.cooperation.forward.service @ONLY)
-install(FILES ${CMAKE_CURRENT_BINARY_DIR}/cn.uniontech.cooperation.forward.service
+configure_file(data/dde.cooperation.forward.service.in
+               ${CMAKE_CURRENT_BINARY_DIR}/dde.cooperation.forward.service @ONLY)
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/dde.cooperation.forward.service
         DESTINATION share/dbus-1/system-services)
 # dbus-daemon only reads /etc: this must not follow the install prefix.
-install(FILES data/cn.uniontech.cooperation.forward.conf
+install(FILES data/dde.cooperation.forward.conf
         DESTINATION /etc/dbus-1/system.d)
-install(FILES data/cn.uniontech.cooperation.forward.policy
+install(FILES data/dde.cooperation.forward.policy
         DESTINATION share/polkit-1/actions)
