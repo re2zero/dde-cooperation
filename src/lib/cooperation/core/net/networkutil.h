@@ -54,6 +54,15 @@ public:
     void stopTunnels();
     bool isTunnelForwarding() const;
 
+    // subnet-forward: reflects the local configuration into the serving
+    // policy, activates interception for a peer after negotiation, refreshes
+    // both when the configuration changes at runtime and stops everything on
+    // application exit.
+    void applySubnetForwardPolicy();
+    bool activateSubnetForward(const QString &peerIp);
+    void refreshSubnetForward();
+    void stopSubnetForward();
+
     QString deviceInfoStr();
 
     bool isCurrentlyCooperating();

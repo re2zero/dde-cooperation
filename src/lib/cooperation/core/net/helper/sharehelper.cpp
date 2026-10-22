@@ -5,6 +5,7 @@
 #include "sharehelper.h"
 #include "sharehelper_p.h"
 #include "net/networkutil.h"
+#include "net/subnetforward/subnetforwardcontroller.h"
 #include "utils/historymanager.h"
 #include "utils/cooperationutil.h"
 #include "discover/deviceinfo.h"
@@ -88,13 +89,23 @@ void ShareHelperPrivate::initConnect()
     connect(&confirmTimer, &QTimer::timeout, q, &ShareHelper::onVerifyTimeout);
 
     // The peer normally announces BARRIER_READY right after its server starts.
-    // If it is an older build, fall back to the direct connection.
+    // If it is an older build, fall back to the direct connection. When
+    // subnet-forward interception is active for this peer the fallback is
+    // meaningless: every probe enters the tunnel and always answers, so the
+    // tunnel path is used right away instead (documented decision).
     barrierReadyTimer.setInterval(8 * 1000);
     barrierReadyTimer.setSingleShot(true);
     connect(&barrierReadyTimer, &QTimer::timeout, this, [this] {
         if (!isRecvMode || !targetDeviceInfo
             || targetDeviceInfo->connectStatus() != DeviceInfo::Connected)
             return;
+        const QString ip = targetDeviceInfo->ipAddress();
+        if (SubnetForwardController::isForwardingPeer(ip)) {
+            WLOG << "BARRIER_READY timeout, direct fallback is intercepted,"
+                 << " using the tunnel";
+            startTunnelBarrier(ip);
+            return;
+        }
         WLOG << "BARRIER_READY timeout, fallback to direct barrier connection";
         tunnelPort = 0;
         useTunnel = false;
@@ -117,6 +128,7 @@ void ShareHelperPrivate::cancelShareApply()
     taskDialog()->hide();
     barrierReadyTimer.stop();
     NetworkUtil::instance()->stopTunnels();
+    NetworkUtil::instance()->stopSubnetForward();
     NetworkUtil::instance()->setTunnelPeer(QString());
     tunnelPort = 0;
     NetworkUtil::instance()->cancelApply("share", targetDeviceInfo->ipAddress());
@@ -143,6 +155,7 @@ void ShareHelperPrivate::stopCooperation()
     DLOG << "Stopping cooperation";
     barrierReadyTimer.stop();
     NetworkUtil::instance()->stopTunnels();
+    NetworkUtil::instance()->stopSubnetForward();
     NetworkUtil::instance()->setTunnelPeer(QString());
     tunnelPort = 0;
     if (targetDeviceInfo && targetDeviceInfo->connectStatus() == DeviceInfo::Connected) {
@@ -367,6 +380,7 @@ void ShareHelper::disconnectToDevice(const DeviceInfoPointer info)
 
     d->barrierReadyTimer.stop();
     NetworkUtil::instance()->stopTunnels();
+    NetworkUtil::instance()->stopSubnetForward();
     NetworkUtil::instance()->setTunnelPeer(QString());
     d->tunnelPort = 0;
     d->useTunnel = false;
@@ -460,6 +474,7 @@ void ShareHelper::notifyConnectRequest(const QString &info)
     d->barrierReadyTimer.stop();
     // A stale tunnel from an abnormally ended session must not be reused.
     NetworkUtil::instance()->stopTunnels();
+    NetworkUtil::instance()->stopSubnetForward();
     NetworkUtil::instance()->setTunnelPeer(QString());
     
     // 如果计时器仍在运行，停止它以避免旧请求超时干扰新请求
@@ -623,6 +638,13 @@ void ShareHelper::handleBarrierReady(const QString &ip)
     d->senderDeviceIp = ip;
     NetworkUtil::instance()->setTunnelPeer(ip);
 
+    // The cooperation is confirmed on this side: activate the interception
+    // if the negotiated offer, the configuration and the device whitelist
+    // all agree. Must happen before the direct probe below - while
+    // forwarding is active the probe would enter the tunnel and always
+    // answer, so probeBarrierServer skips itself for this peer.
+    NetworkUtil::instance()->activateSubnetForward(ip);
+
     auto on = CooperationUtil::deviceInfo().value(AppSettings::PeripheralShareKey).toBool();
     if (!on) {
         DLOG << "Peripheral sharing is disabled, ignore barrier ready";
@@ -686,6 +708,15 @@ void ShareHelperPrivate::startClientBarrier()
 
 void ShareHelperPrivate::probeBarrierServer(const QString &ip, int attemptsLeft)
 {
+    // While subnet-forward interception is active for this peer a direct
+    // probe would enter the tunnel and always answer, which would wrongly
+    // disable the barrier tunnel path. Skip the probe and go through the
+    // tunnel right away (documented decision, see handleBarrierReady).
+    if (SubnetForwardController::isForwardingPeer(ip)) {
+        startTunnelBarrier(ip);
+        return;
+    }
+
     auto *socket = new QTcpSocket(this);
     auto finished = std::make_shared<bool>(false);
 
@@ -786,6 +817,7 @@ void ShareHelper::handleDisConnectResult(const QString &devName)
     DLOG << "Stopping cooperation service";
     d->barrierReadyTimer.stop();
     NetworkUtil::instance()->stopTunnels();
+    NetworkUtil::instance()->stopSubnetForward();
     NetworkUtil::instance()->setTunnelPeer(QString());
     d->tunnelPort = 0;
     d->useTunnel = false;

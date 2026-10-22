@@ -50,9 +50,9 @@ void SubnetForwardController::configure(const SubnetForwardPolicy &policy)
 
 bool SubnetForwardController::activate(const QString &peerIp)
 {
-    if (_peerIp == peerIp && _proxy->isRunning())
-        return true;
-
+    // Never early-return on "already active": a repeated activate carries a
+    // fresh configuration snapshot (runtime config changes) and must refresh
+    // the gates and the rules.
     deactivate("reactivating");
 
     if (peerIp.isEmpty() || _policy.allowedNetworks.isEmpty()) {

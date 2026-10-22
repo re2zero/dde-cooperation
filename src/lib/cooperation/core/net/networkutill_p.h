@@ -35,6 +35,10 @@ public:
     // session keeps working.
     bool ensureTunnelPeer(const QString &ip);
 
+    // Reflects the local subnet-forward configuration into the serving
+    // policy of the tunnel manager. GUI thread only.
+    void applyServingPolicy();
+
 public Q_SLOTS:
     void handleConnectStatus(int result, QString reason);
     void handleTransChanged(int status, const QString &path, quint64 size);
@@ -55,6 +59,8 @@ private:
     // GUI thread.
     std::atomic<bool> transTunnelOffered { false };   // peer offers the tunnel
     std::atomic<bool> peerTransTunnel { false };      // peer can forward for us
+    // The peer announced (share handshake) that it serves subnet-forward.
+    std::atomic<bool> peerSubnetForwardOffered { false };
 };
 
 }

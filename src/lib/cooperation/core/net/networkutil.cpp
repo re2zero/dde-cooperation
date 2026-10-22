@@ -16,6 +16,7 @@
 #include "helper/transferhelper.h"
 #include "helper/sharehelper.h"
 #include "share/sharecooperationservicemanager.h"
+#include "subnetforward/subnetforwardconfig.h"
 #include "subnetforward/subnetforwardcontroller.h"
 #ifdef ENABLE_PHONE
 #include "helper/phonehelper.h"
@@ -61,6 +62,13 @@ NetworkUtilPrivate::NetworkUtilPrivate(NetworkUtil *qq)
     // support subnet-forward; teardown runs on session loss, on stop and in
     // the destructor so no rule or listener outlives the cooperation.
     subnetForward = new SubnetForwardController(tunnelManager, this);
+    // Runtime effective configuration: rebuild both roles when the settings
+    // file changes.
+    connect(&SubnetForwardConfig::instance(), &SubnetForwardConfig::changed, this, [this] {
+        NetworkUtil *util = q;
+        QMetaObject::invokeMethod(util, [util] { util->refreshSubnetForward(); },
+                                  Qt::QueuedConnection);
+    });
 
     // Transfer services are temporary: the sender registers its file server,
     // the receiver opens a loopback forward for the announced service.
@@ -154,6 +162,12 @@ NetworkUtilPrivate::NetworkUtilPrivate(NetworkUtil *qq)
             info += QStringLiteral(",") + (req.tunnel ? QStringLiteral("1") : QStringLiteral("0"));
             *res_msg = res.as_json().serialize();
             confirmTargetAddress = QString::fromStdString(req.host);
+            // Remember whether the peer serves subnet-forward. The using side
+            // activates only when this offer and the local configuration both
+            // agree.
+            peerSubnetForwardOffered.store(req.subnetForward);
+            WLOG << "Received share request from:" << req.host << "subnet-forward offer:"
+                 << req.subnetForward;
             q->metaObject()->invokeMethod(ShareHelper::instance(),
                                           "notifyConnectRequest",
                                           Qt::QueuedConnection,
@@ -180,6 +194,17 @@ NetworkUtilPrivate::NetworkUtilPrivate(NetworkUtil *qq)
             bool agree = (req.flag == REPLY_ACCEPT);
             res.flag = DO_DONE;
             *res_msg = res.as_json().serialize();
+            peerTransTunnel.store(agree && req.tunnel);
+            // The replying side announced its own serving willingness for the
+            // mirrored flow.
+            peerSubnetForwardOffered.store(agree && req.subnetForward);
+            if (agree) {
+                // Cooperation confirmed: reflect the serving configuration
+                // into the tunnel manager on the GUI thread.
+                NetworkUtil *util = q;
+                QMetaObject::invokeMethod(util, [util] { util->applySubnetForwardPolicy(); },
+                                          Qt::QueuedConnection);
+            }
 
             int resultCode;
             if (agree) {
@@ -339,6 +364,25 @@ bool NetworkUtilPrivate::ensureTunnelPeer(const QString &ip)
         tunnelManager->setPeer(ip);
 
     return tunnelManager->peer() == ip;
+}
+
+void NetworkUtilPrivate::applyServingPolicy()
+{
+    if (!tunnelManager)
+        return;
+
+    auto &config = SubnetForwardConfig::instance();
+    if (!config.serveReady()) {
+        tunnelManager->clearSubnetForwardPolicy();
+        return;
+    }
+
+    // setSubnetForwardPolicy validates the parsed result and keeps the old
+    // policy on rejection; a rejected configuration must not linger.
+    if (!tunnelManager->setSubnetForwardPolicy(config.servingPolicy())) {
+        WLOG << "SubnetForward: serving policy was rejected, clearing it";
+        tunnelManager->clearSubnetForwardPolicy();
+    }
 }
 
 void NetworkUtilPrivate::handleConnectStatus(int result, QString reason)
@@ -886,6 +930,7 @@ void NetworkUtil::sendShareApply(const QString &ip, bool compat)
         msg.host = CooperationUtil::localIPAddress().toStdString();
         msg.fingerprint = _selfFingerPrint.toStdString();   // send self fingerprint
         msg.tunnel = true;   // this build supports the reverse tunnel
+        msg.subnetForward = SubnetForwardConfig::instance().serveReady();
         QString jsonMsg = msg.as_json().serialize().c_str();
         d->sessionManager->sendRpcRequest(ip, APPLY_SHARE, jsonMsg);
     }
@@ -962,10 +1007,18 @@ void NetworkUtil::replyShareRequest(bool agree, const QString &selfprint, const 
         msg.host = CooperationUtil::localIPAddress().toStdString();
         msg.fingerprint = selfprint.toStdString();   // send self fingerprint
         msg.tunnel = tunnelSupported;
+        // Announce the own serving willingness; the peer only activates its
+        // interception when this and its local configuration agree.
+        msg.subnetForward = SubnetForwardConfig::instance().serveReady();
         QString jsonMsg = msg.as_json().serialize().c_str();
 
         // _confirmTargetAddress
         d->sessionManager->sendRpcRequest(d->confirmTargetAddress, APPLY_SHARE_RESULT, jsonMsg);
+
+        // Cooperation confirmed on this side: reflect the serving
+        // configuration (fail closed, an unused policy dials nothing).
+        if (agree)
+            d->applyServingPolicy();
     } else {
 #ifdef ENABLE_COMPAT
         DLOG << "Compat mode enabled, trying with old protocol by daemon";
@@ -1006,6 +1059,47 @@ void NetworkUtil::stopTunnels()
 {
     if (d->tunnelManager)
         d->tunnelManager->stopAll();
+}
+
+void NetworkUtil::applySubnetForwardPolicy()
+{
+    d->applyServingPolicy();
+}
+
+bool NetworkUtil::activateSubnetForward(const QString &peerIp)
+{
+    auto &config = SubnetForwardConfig::instance();
+    // Both the local configuration and the negotiated peer offer must agree,
+    // otherwise interception would black-hole the configured networks.
+    if (!config.useReady(peerIp) || !d->peerSubnetForwardOffered.load())
+        return false;
+
+    d->subnetForward->configure(config.usingPolicy());
+    return d->subnetForward->activate(peerIp);
+}
+
+void NetworkUtil::refreshSubnetForward()
+{
+    d->applyServingPolicy();
+
+    if (!d->subnetForward->isActive())
+        return;
+
+    const QString peer = d->subnetForward->peer();
+    if (!SubnetForwardConfig::instance().useReady(peer)
+        || !d->peerSubnetForwardOffered.load()) {
+        d->subnetForward->deactivate(QStringLiteral("configuration disabled"));
+        return;
+    }
+    // Re-activate with the fresh snapshot: the proxy gates and the helper
+    // rules are rebuilt from the current configuration.
+    d->subnetForward->configure(SubnetForwardConfig::instance().usingPolicy());
+    d->subnetForward->activate(peer);
+}
+
+void NetworkUtil::stopSubnetForward()
+{
+    d->subnetForward->deactivate(QStringLiteral("stopped"));
 }
 
 bool NetworkUtil::isTunnelForwarding() const

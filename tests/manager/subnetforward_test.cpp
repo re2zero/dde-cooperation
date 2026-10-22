@@ -406,6 +406,76 @@ TEST(SubnetForwardProxyTest, StartReplacesThePreviousListener)
 }
 
 // ---------------------------------------------------------------------------
+// capability negotiation
+// ---------------------------------------------------------------------------
+
+TEST(SubnetForwardNegotiationTest, ApplyMessageCarriesTheCapabilityBit)
+{
+    ApplyMessage msg;
+    msg.flag = 1;
+    msg.nick = "sender";
+    msg.host = "10.8.12.90";
+    msg.port = 51598;
+    msg.fingerprint = "fp";
+    msg.tunnel = true;
+    msg.subnetForward = true;
+
+    ApplyMessage parsed;
+    parsed.from_json(msg.as_json());
+    EXPECT_TRUE(parsed.tunnel);
+    EXPECT_TRUE(parsed.subnetForward);
+
+    msg.subnetForward = false;
+    parsed.from_json(msg.as_json());
+    EXPECT_TRUE(parsed.tunnel);
+    EXPECT_FALSE(parsed.subnetForward);
+}
+
+TEST(SubnetForwardNegotiationTest, OldPeerPayloadWithoutTheBitStaysCompatible)
+{
+    // A peer without the subnet-forward support sends no field: the parsed
+    // message must read it as "not offered" and keep the tunnel bit intact.
+    ApplyMessage msg;
+    msg.flag = 2;
+    msg.nick = "old";
+    msg.host = "10.8.15.60";
+    msg.port = 22;
+    msg.tunnel = true;
+
+    picojson::value value = msg.as_json();
+    ASSERT_TRUE(value.is<picojson::object>());
+    picojson::object object = value.get<picojson::object>();
+    EXPECT_EQ(object.count("subnet_forward"), 1);   // present after as_json
+
+    // Strip it to simulate an older peer's payload.
+    object.erase("subnet_forward");
+    ApplyMessage parsed;
+    parsed.from_json(picojson::value(object));
+    EXPECT_TRUE(parsed.tunnel);
+    EXPECT_FALSE(parsed.subnetForward);
+}
+
+TEST(SubnetForwardNegotiationTest, MalformedCapabilityValueDoesNotBreakParsing)
+{
+    picojson::object object;
+    object["flag"] = picojson::value(int64_t(1));
+    object["nick"] = picojson::value("x");
+    object["selfIp"] = picojson::value("10.0.0.1");
+    object["selfPort"] = picojson::value(int64_t(1));
+    object["tunnel"] = picojson::value(true);
+    object["subnet_forward"] = picojson::value("not-a-bool");
+
+    ApplyMessage parsed;
+    parsed.from_json(picojson::value(object));
+    EXPECT_TRUE(parsed.tunnel);
+    EXPECT_FALSE(parsed.subnetForward);
+
+    object["subnet_forward"] = picojson::value(1.0);
+    parsed.from_json(picojson::value(object));
+    EXPECT_TRUE(parsed.subnetForward);
+}
+
+// ---------------------------------------------------------------------------
 // policy limits
 // ---------------------------------------------------------------------------
 

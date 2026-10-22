@@ -172,6 +172,7 @@ struct ApplyMessage {
     int64_t port {0};
     std::string  fingerprint {""};
     bool tunnel { false };  // peer supports the reverse tunnel
+    bool subnetForward { false };  // peer is willing to serve subnet-forward
 
     void from_json(const picojson::value& _x_) {
         flag = _x_.get("flag").get<int64_t>();
@@ -192,6 +193,16 @@ struct ApplyMessage {
             else if (value.is<double>())
                 tunnel = value.get<double>() != 0;
         }
+        subnetForward = false;
+        if (_x_.contains("subnet_forward")) {
+            // Same tolerance as "tunnel": the field is absent on older peers
+            // and a malformed value must not break parsing.
+            const auto &value = _x_.get("subnet_forward");
+            if (value.is<bool>())
+                subnetForward = value.get<bool>();
+            else if (value.is<double>())
+                subnetForward = value.get<double>() != 0;
+        }
     }
 
     picojson::value as_json() const {
@@ -202,6 +213,7 @@ struct ApplyMessage {
         obj["selfPort"] = picojson::value(port);
         obj["fingerprint"] = picojson::value(fingerprint);
         obj["tunnel"] = picojson::value(tunnel);
+        obj["subnet_forward"] = picojson::value(subnetForward);
         return picojson::value(obj);
     }
 };
