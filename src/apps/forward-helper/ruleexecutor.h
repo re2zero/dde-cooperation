@@ -18,11 +18,29 @@ namespace SubnetForwardExec {
 
 enum class Backend { Nft, Iptables, None };
 
+// The dbus activation environment does not necessarily carry /sbin or
+// /usr/sbin in PATH (observed: PATH had only the four /usr/local/... and
+// /usr/... bin dirs), so never resolve the tools through PATH alone.
+inline QStringList toolSearchPaths()
+{
+    return { QStringLiteral("/usr/sbin"), QStringLiteral("/sbin"),
+             QStringLiteral("/usr/bin"), QStringLiteral("/bin"),
+             QStringLiteral("/usr/local/sbin"), QStringLiteral("/usr/local/bin") };
+}
+
+inline QString resolveTool(const QString &name)
+{
+    const QString found = QStandardPaths::findExecutable(name, toolSearchPaths());
+    if (!found.isEmpty())
+        return found;
+    return QStandardPaths::findExecutable(name);
+}
+
 inline Backend detectBackend()
 {
-    if (!QStandardPaths::findExecutable(QStringLiteral("nft")).isEmpty())
+    if (!resolveTool(QStringLiteral("nft")).isEmpty())
         return Backend::Nft;
-    if (!QStandardPaths::findExecutable(QStringLiteral("iptables")).isEmpty())
+    if (!resolveTool(QStringLiteral("iptables")).isEmpty())
         return Backend::Iptables;
     return Backend::None;
 }
@@ -43,7 +61,9 @@ inline QString backendName(Backend backend)
 inline bool runCommand(const QStringList &argv, QString *error)
 {
     QProcess process;
-    process.start(argv.first(), argv.mid(1));
+    // argv.first() is a bare tool name from the shared rule tables; resolve
+    // it against the fixed tool paths instead of the inherited PATH.
+    process.start(resolveTool(argv.first()), argv.mid(1));
     if (!process.waitForStarted(3000)) {
         if (error)
             *error = QStringLiteral("cannot start %1").arg(argv.first());
@@ -78,7 +98,8 @@ inline void runTolerant(const QStringList &argv)
 inline bool applyNft(const SubnetForwardRules::RuleSpec &spec, QString *error)
 {
     QProcess process;
-    process.start(QStringLiteral("nft"), QStringList { QStringLiteral("-f"), QStringLiteral("-") });
+    process.start(resolveTool(QStringLiteral("nft")),
+                  QStringList { QStringLiteral("-f"), QStringLiteral("-") });
     if (!process.waitForStarted(3000)) {
         if (error)
             *error = QStringLiteral("cannot start nft");
