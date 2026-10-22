@@ -40,6 +40,57 @@ bool parseStreamId(const QJsonObject &object, quint32 *id)
     *id = static_cast<quint32>(value);
     return true;
 }
+
+// Strict IPv4 CIDR parser: "a.b.c.d" optionally followed by "/prefix".
+// Anything that is not exactly that is a configuration error and must fail
+// closed, so the policy parser can never be talked into a wider range than
+// the operator typed.
+bool parseCidr4(const QString &entry, QHostAddress *network, int *prefix)
+{
+    const int slash = entry.indexOf(QLatin1Char('/'));
+    const QString addressPart = slash < 0 ? entry : entry.left(slash);
+
+    // Reject partial forms ("10.8.12", "10.8.12.") and any non-digit
+    // separator noise regardless of what the platform resolver accepts.
+    const QStringList parts = addressPart.split(QLatin1Char('.'));
+    if (parts.size() != 4)
+        return false;
+    for (const QString &part : parts) {
+        if (part.isEmpty() || part.size() > 3)
+            return false;
+        for (const QChar &c : part) {
+            if (!c.isDigit())
+                return false;
+        }
+        bool ok = false;
+        const int octet = part.toInt(&ok);
+        if (!ok || octet > 255)
+            return false;
+    }
+
+    const QHostAddress address(addressPart);
+    if (address.isNull() || address.protocol() != QAbstractSocket::IPv4Protocol)
+        return false;
+
+    int length = 32;
+    if (slash >= 0) {
+        const QString prefixPart = entry.mid(slash + 1);
+        if (prefixPart.isEmpty() || prefixPart.size() > 2)
+            return false;
+        for (const QChar &c : prefixPart) {
+            if (!c.isDigit())
+                return false;
+        }
+        bool ok = false;
+        length = prefixPart.toInt(&ok);
+        if (!ok || length < 0 || length > 32)
+            return false;
+    }
+
+    *network = address;
+    *prefix = length;
+    return true;
+}
 }
 
 TunnelManager::TunnelManager(QObject *parent)
@@ -74,6 +125,162 @@ void TunnelManager::unregisterService(const QString &serviceId)
 void TunnelManager::clearServices()
 {
     _services.clear();
+}
+
+bool TunnelManager::setSubnetForwardPolicy(const SubnetForwardPolicy &policy)
+{
+    QVector<QPair<QHostAddress, int>> networks;
+    networks.reserve(policy.allowedNetworks.size());
+    for (const QString &entry : policy.allowedNetworks) {
+        QHostAddress network;
+        int prefix = 0;
+        if (!parseCidr4(entry, &network, &prefix)) {
+            WLOG << "TunnelManager: invalid subnet-forward network entry:"
+                 << entry.toStdString();
+            return false;
+        }
+        networks.append(qMakePair(network, prefix));
+    }
+
+    QSet<quint32> hosts;
+    hosts.reserve(policy.allowedHosts.size());
+    for (const QString &entry : policy.allowedHosts) {
+        const QHostAddress address(entry);
+        if (address.isNull() || address.protocol() != QAbstractSocket::IPv4Protocol) {
+            WLOG << "TunnelManager: invalid subnet-forward host entry:"
+                 << entry.toStdString();
+            return false;
+        }
+        hosts.insert(address.toIPv4Address());
+    }
+
+    if (policy.maxStreams < 0 || policy.maxStreams > kMaxSubnetStreams) {
+        WLOG << "TunnelManager: invalid subnet-forward stream limit:" << policy.maxStreams;
+        return false;
+    }
+
+    _subnetPolicy = policy;
+    _subnetNetworks = networks;
+    _subnetHosts = hosts;
+    _subnetForward = true;
+
+    // Streams opened under the previous policy keep running only while the
+    // new one still allows their target.
+    const auto ids = _streams.keys();
+    for (auto id : ids) {
+        Stream *stream = _streams.value(id);
+        if (!stream || stream->dstHost.isEmpty())
+            continue;
+        QString reason;
+        if (!targetAllowed(stream->dstHost, stream->dstPort, &reason))
+            destroyStream(id, reason, true);
+    }
+    return true;
+}
+
+void TunnelManager::clearSubnetForwardPolicy()
+{
+    if (!_subnetForward)
+        return;
+
+    _subnetForward = false;
+    _subnetNetworks.clear();
+    _subnetHosts.clear();
+    _subnetPolicy = SubnetForwardPolicy();
+
+    // Losing the policy must not leave peer traffic flowing through us.
+    const auto ids = _streams.keys();
+    for (auto id : ids) {
+        Stream *stream = _streams.value(id);
+        if (stream && !stream->dstHost.isEmpty())
+            destroyStream(id, "policy removed", true);
+    }
+}
+
+quint32 TunnelManager::openDynamicStream(const QString &dst, QTcpSocket *socket)
+{
+    QString host;
+    quint16 port = 0;
+    if (!socket || !parseDynamicTarget(dst, &host, &port)) {
+        WLOG << "TunnelManager: refuse subnet-forward stream, bad target:"
+             << dst.toStdString();
+        return 0;
+    }
+
+    if (_peerIp.isEmpty()) {
+        WLOG << "TunnelManager: refuse subnet-forward stream, no session peer";
+        return 0;
+    }
+
+    const quint32 id = nextStreamId();
+    const QString token = makeToken();
+    Stream *stream = createStream(id, QLatin1String(kSubnetForwardService), token, false);
+    stream->dstHost = host;
+    stream->dstPort = port;
+    stream->sock = socket;
+    socket->setParent(this);
+    socket->setSocketOption(QAbstractSocket::LowDelayOption, 1);
+    setupSocket(stream);
+    startConnectTimeout(stream);
+
+    if (!_send) {
+        destroyStream(id, "no session", false);
+        return 0;
+    }
+
+    _send(_peerIp, TUNNEL_OPEN, makeOpen(id, QLatin1String(kSubnetForwardService), token, dst));
+    WLOG << "TunnelManager: subnet-forward stream" << id << "opened toward:"
+         << _peerIp.toStdString() << "target:" << dst.toStdString();
+    return id;
+}
+
+bool TunnelManager::parseDynamicTarget(const QString &dst, QString *host, quint16 *port)
+{
+    // Exactly "a.b.c.d:port". One colon only keeps IPv6 literals and scoped
+    // addresses out; the host must be a literal so neither end ever resolves
+    // a peer supplied name.
+    if (dst.isEmpty() || dst.size() > 21)
+        return false;
+
+    const int colon = dst.indexOf(QLatin1Char(':'));
+    if (colon <= 0 || colon != dst.lastIndexOf(QLatin1Char(':')))
+        return false;
+
+    const QString hostPart = dst.left(colon);
+    const QString portPart = dst.mid(colon + 1);
+    if (portPart.isEmpty() || portPart.size() > 5)
+        return false;
+    for (const QChar &c : portPart) {
+        if (!c.isDigit())
+            return false;
+    }
+
+    const QStringList parts = hostPart.split(QLatin1Char('.'));
+    if (parts.size() != 4)
+        return false;
+    for (const QString &part : parts) {
+        if (part.isEmpty() || part.size() > 3)
+            return false;
+        for (const QChar &c : part) {
+            if (!c.isDigit())
+                return false;
+        }
+        bool ok = false;
+        const int octet = part.toInt(&ok);
+        if (!ok || octet > 255)
+            return false;
+    }
+
+    bool ok = false;
+    const ushort portValue = portPart.toUShort(&ok);
+    if (!ok || portValue == 0)
+        return false;
+
+    if (host)
+        *host = hostPart;
+    if (port)
+        *port = portValue;
+    return true;
 }
 
 void TunnelManager::setPeer(const QString &peerIp)
@@ -328,7 +535,8 @@ void TunnelManager::handleOpen(const QString &remote, const QByteArray &payload)
     quint32 id = 0;
     QString serviceId;
     QString token;
-    if (!parseOpen(payload, &id, &serviceId, &token))
+    QString dst;
+    if (!parseOpen(payload, &id, &serviceId, &token, &dst))
         return;
 
     if (!_send) {
@@ -344,6 +552,17 @@ void TunnelManager::handleOpen(const QString &remote, const QByteArray &payload)
         return;
     }
 
+    if (_streams.contains(id)) {
+        WLOG << "TunnelManager: duplicate stream id:" << id;
+        _send(_peerIp, TUNNEL_OPEN_ACK, makeOpenAck(id, false, token, "duplicate stream"));
+        return;
+    }
+
+    if (serviceId == QLatin1String(kSubnetForwardService)) {
+        handleDynamicOpen(id, dst, token);
+        return;
+    }
+
     auto service = _services.constFind(serviceId);
     if (service == _services.constEnd()) {
         WLOG << "TunnelManager: reject unknown service:" << serviceId.toStdString();
@@ -351,12 +570,103 @@ void TunnelManager::handleOpen(const QString &remote, const QByteArray &payload)
         return;
     }
 
-    if (_streams.contains(id)) {
-        WLOG << "TunnelManager: duplicate stream id:" << id;
-        _send(_peerIp, TUNNEL_OPEN_ACK, makeOpenAck(id, false, token, "duplicate stream"));
+    // A static service dials its registered address; a stray "dst" field from
+    // a newer peer is ignored for compatibility.
+    Stream *stream = createDialerStream(id, serviceId, token);
+    DLOG << "TunnelManager: dial service" << serviceId.toStdString()
+         << "for stream" << id;
+    stream->sock->connectToHost(service->host, service->port);
+}
+
+void TunnelManager::handleDynamicOpen(quint32 id, const QString &dst, const QString &token)
+{
+    QString host;
+    quint16 port = 0;
+    QString reason = QStringLiteral("bad target");
+    if (parseDynamicTarget(dst, &host, &port))
+        targetAllowed(host, port, &reason);
+
+    if (!reason.isEmpty()) {
+        WLOG << "TunnelManager: reject subnet-forward stream" << id << "target:"
+             << dst.toStdString() << "from:" << _peerIp.toStdString()
+             << "reason:" << reason.toStdString();
+        _send(_peerIp, TUNNEL_OPEN_ACK, makeOpenAck(id, false, token, reason));
         return;
     }
 
+    if (dynamicStreamCount() >= _subnetPolicy.maxStreams) {
+        WLOG << "TunnelManager: reject subnet-forward stream" << id << "target:"
+             << dst.toStdString() << "from:" << _peerIp.toStdString()
+             << "reason: too many streams";
+        _send(_peerIp, TUNNEL_OPEN_ACK, makeOpenAck(id, false, token, QStringLiteral("too many streams")));
+        return;
+    }
+
+    Stream *stream = createDialerStream(id, QLatin1String(kSubnetForwardService), token);
+    stream->dstHost = host;
+    stream->dstPort = port;
+
+    WLOG << "TunnelManager: subnet-forward stream" << id << "from:" << _peerIp.toStdString()
+         << "target:" << host.toStdString() << ":" << port;
+    stream->sock->connectToHost(host, port);
+}
+
+bool TunnelManager::targetAllowed(const QString &host, quint16 port, QString *reason) const
+{
+    reason->clear();
+
+    if (!_subnetForward) {
+        *reason = QStringLiteral("service disabled");
+        return false;
+    }
+    if (_subnetPolicy.deniedPorts.contains(port)) {
+        *reason = QStringLiteral("port denied");
+        return false;
+    }
+    if (!_subnetPolicy.allowedPorts.isEmpty() && !_subnetPolicy.allowedPorts.contains(port)) {
+        *reason = QStringLiteral("port not allowed");
+        return false;
+    }
+
+    // Containment first: outside the allowed networks the host list plays no
+    // role, it only narrows the hosts inside them.
+    const QHostAddress address(host);
+    if (_subnetNetworks.isEmpty()) {
+        *reason = QStringLiteral("network not allowed");
+        return false;
+    }
+    bool inNetwork = false;
+    for (const auto &network : _subnetNetworks) {
+        if (address.isInSubnet(network.first, network.second)) {
+            inNetwork = true;
+            break;
+        }
+    }
+    if (!inNetwork) {
+        *reason = QStringLiteral("network not allowed");
+        return false;
+    }
+
+    if (!_subnetHosts.isEmpty() && !_subnetHosts.contains(address.toIPv4Address())) {
+        *reason = QStringLiteral("host not allowed");
+        return false;
+    }
+    return true;
+}
+
+int TunnelManager::dynamicStreamCount() const
+{
+    int count = 0;
+    for (const Stream *stream : _streams) {
+        if (stream && !stream->dstHost.isEmpty())
+            ++count;
+    }
+    return count;
+}
+
+TunnelManager::Stream *TunnelManager::createDialerStream(quint32 id, const QString &serviceId,
+                                                         const QString &token)
+{
     Stream *stream = createStream(id, serviceId, token, true);
     stream->sock = new QTcpSocket(this);
     stream->sock->setSocketOption(QAbstractSocket::LowDelayOption, 1);
@@ -378,15 +688,18 @@ void TunnelManager::handleOpen(const QString &remote, const QByteArray &payload)
         _send(_peerIp, TUNNEL_OPEN_ACK, makeOpenAck(id, true, current->token));
         flushPending(id);
 
-        DLOG << "TunnelManager: stream" << id << "connected to service"
-             << current->serviceId.toStdString();
+        if (current->dstHost.isEmpty()) {
+            DLOG << "TunnelManager: stream" << id << "connected to service"
+                 << current->serviceId.toStdString();
+        } else {
+            DLOG << "TunnelManager: subnet-forward stream" << id << "connected to target:"
+                 << current->dstHost.toStdString() << ":" << current->dstPort;
+        }
         emit streamOpened(id, current->serviceId);
         pump(id);
     });
 
-    DLOG << "TunnelManager: dial service" << serviceId.toStdString()
-         << "for stream" << id;
-    stream->sock->connectToHost(service->host, service->port);
+    return stream;
 }
 
 void TunnelManager::dialService(quint32 id)
@@ -394,6 +707,14 @@ void TunnelManager::dialService(quint32 id)
     Stream *stream = findStream(id);
     if (!stream || stream->ready || !stream->sock)
         return;
+
+    if (!stream->dstHost.isEmpty()) {
+        // Dynamic targets dial their recorded destination; there is no
+        // service entry to look up.
+        stream->sock->abort();
+        stream->sock->connectToHost(stream->dstHost, stream->dstPort);
+        return;
+    }
 
     const auto service = _services.constFind(stream->serviceId);
     if (service == _services.constEnd()) {
@@ -478,6 +799,8 @@ void TunnelManager::handleData(const QByteArray &payload)
     }
 
     stream->pending.append(chunk);
+    if (!stream->dstHost.isEmpty())
+        stream->relayedToTarget += chunk.size();
     flushPending(id);
 }
 
@@ -613,6 +936,14 @@ void TunnelManager::destroyStream(quint32 id, const QString &reason, bool notify
         stream->sock = nullptr;
     }
 
+    // Audit line for forwarded traffic: peer, original target and the byte
+    // volume that actually crossed the session.
+    if (!stream->dstHost.isEmpty()) {
+        WLOG << "TunnelManager: subnet-forward stream" << id << "closed:" << reason.toStdString()
+             << "target:" << stream->dstHost.toStdString() << ":" << stream->dstPort
+             << "to peer:" << stream->relayedToPeer << "to target:" << stream->relayedToTarget;
+    }
+
     DLOG << "TunnelManager: stream" << id << "closed:"
          << reason.toStdString();
     delete stream;
@@ -633,6 +964,8 @@ void TunnelManager::pump(quint32 id)
 
         sendData(id, chunk);
         stream->unacked += chunk.size();
+        if (!stream->dstHost.isEmpty())
+            stream->relayedToPeer += chunk.size();
     }
 }
 
@@ -692,12 +1025,17 @@ void TunnelManager::flushPending(quint32 id)
     }
 }
 
-QByteArray TunnelManager::makeOpen(quint32 id, const QString &service, const QString &token)
+QByteArray TunnelManager::makeOpen(quint32 id, const QString &service, const QString &token,
+                                   const QString &dst)
 {
     QJsonObject object;
     object.insert(QStringLiteral("stream"), static_cast<double>(id));
     object.insert(QStringLiteral("service"), service);
     object.insert(QStringLiteral("token"), token);
+    // Only the subnet-forward service announces a destination. Older peers
+    // ignore the extra field and reject the unknown service name.
+    if (!dst.isEmpty())
+        object.insert(QStringLiteral("dst"), dst);
     return QJsonDocument(object).toJson(QJsonDocument::Compact);
 }
 
@@ -712,7 +1050,8 @@ QByteArray TunnelManager::makeOpenAck(quint32 id, bool ok, const QString &token,
     return QJsonDocument(object).toJson(QJsonDocument::Compact);
 }
 
-bool TunnelManager::parseOpen(const QByteArray &payload, quint32 *id, QString *service, QString *token)
+bool TunnelManager::parseOpen(const QByteArray &payload, quint32 *id, QString *service,
+                              QString *token, QString *dst)
 {
     QJsonParseError error;
     const QJsonDocument document = QJsonDocument::fromJson(payload, &error);
@@ -724,6 +1063,8 @@ bool TunnelManager::parseOpen(const QByteArray &payload, quint32 *id, QString *s
         return false;
     *service = object.value(QStringLiteral("service")).toString();
     *token = object.value(QStringLiteral("token")).toString();
+    if (dst)
+        *dst = object.value(QStringLiteral("dst")).toString();
     return !service->isEmpty() && !token->isEmpty();
 }
 

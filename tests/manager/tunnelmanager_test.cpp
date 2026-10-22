@@ -19,6 +19,8 @@
 #include <QFile>
 #include <QElapsedTimer>
 #include <QHostAddress>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QRandomGenerator>
 #include <QSignalSpy>
 #include <QTemporaryDir>
@@ -548,4 +550,500 @@ TEST(TunnelManagerTest, RejectUnknownService)
 
     b.stopAll();
     a.stopAll();
+}
+
+// ---------------------------------------------------------------------------
+// subnet-forward: dynamic destinations announced in the OPEN frame
+// ---------------------------------------------------------------------------
+
+namespace {
+QByteArray makeOpenPayload(quint32 id, const QString &service, const QString &token,
+                           const QString &dst = QString())
+{
+    QJsonObject object;
+    object.insert(QStringLiteral("stream"), static_cast<double>(id));
+    object.insert(QStringLiteral("service"), service);
+    object.insert(QStringLiteral("token"), token);
+    if (!dst.isEmpty())
+        object.insert(QStringLiteral("dst"), dst);
+    return QJsonDocument(object).toJson(QJsonDocument::Compact);
+}
+
+// Records every frame a manager emits so tests can inspect its answers
+// without a peer on the other side.
+struct FrameSink {
+    QList<QPair<int, QByteArray>> frames;
+
+    TunnelManager::SendHandler handler()
+    {
+        return [this](const QString &, int mask, const QByteArray &payload) {
+            frames.append(qMakePair(mask, payload));
+        };
+    }
+};
+
+bool lastAck(const FrameSink &sink, bool *ok, QString *reason)
+{
+    for (int i = sink.frames.size() - 1; i >= 0; --i) {
+        if (sink.frames.at(i).first != TUNNEL_OPEN_ACK)
+            continue;
+        const QJsonDocument document = QJsonDocument::fromJson(sink.frames.at(i).second);
+        if (!document.isObject())
+            return false;
+        if (ok)
+            *ok = document.object().value(QStringLiteral("ok")).toBool();
+        if (reason)
+            *reason = document.object().value(QStringLiteral("reason")).toString();
+        return true;
+    }
+    return false;
+}
+
+quint16 startEchoServer(QTcpServer &server)
+{
+    if (!server.listen(QHostAddress::LocalHost, 0))
+        return 0;
+    QObject::connect(&server, &QTcpServer::newConnection, &server, [&server] {
+        while (QTcpSocket *socket = server.nextPendingConnection()) {
+            QObject::connect(socket, &QTcpSocket::readyRead, socket, [socket] {
+                socket->write(socket->readAll());
+            });
+            QObject::connect(socket, &QTcpSocket::disconnected, socket, &QObject::deleteLater);
+        }
+    });
+    return server.serverPort();
+}
+
+// Two managers wired back to back: "a" is the target side that validates and
+// dials, "b" is the dialing side.
+struct TunnelPair {
+    TunnelManager a;
+    TunnelManager b;
+
+    void wire()
+    {
+        a.setPeer(QStringLiteral("B"));
+        b.setPeer(QStringLiteral("A"));
+        TunnelManager *target = &a;
+        TunnelManager *dialer = &b;
+        a.setSendHandler([dialer](const QString &, int mask, const QByteArray &payload) {
+            dialer->onTunnelMessage(mask, payload, QStringLiteral("A"));
+        });
+        b.setSendHandler([target](const QString &, int mask, const QByteArray &payload) {
+            target->onTunnelMessage(mask, payload, QStringLiteral("B"));
+        });
+    }
+};
+
+// Stand-in for the phase-2 transparent proxy: every accepted socket is
+// attached to a dynamic destination stream toward "target".
+void acceptIntoDynamicStream(QTcpServer &proxy, TunnelManager &dialer,
+                             const QString &dstTemplate)
+{
+    QObject::connect(&proxy, &QTcpServer::newConnection, &proxy, [&proxy, &dialer, dstTemplate] {
+        while (QTcpSocket *socket = proxy.nextPendingConnection()) {
+            const quint32 id = dialer.openDynamicStream(dstTemplate, socket);
+            EXPECT_NE(id, 0u);
+        }
+    });
+}
+}
+
+TEST(TunnelManagerTest, DynamicTargetRoundTrip)
+{
+    QTcpServer echo;
+    const quint16 echoPort = startEchoServer(echo);
+    ASSERT_NE(echoPort, 0);
+
+    TunnelPair pair;
+    pair.wire();
+
+    SubnetForwardPolicy policy;
+    policy.allowedNetworks = QStringList { QStringLiteral("127.0.0.0/8") };
+    ASSERT_TRUE(pair.a.setSubnetForwardPolicy(policy));
+
+    QTcpServer proxy;
+    ASSERT_TRUE(proxy.listen(QHostAddress::LocalHost, 0));
+    acceptIntoDynamicStream(proxy, pair.b, QStringLiteral("127.0.0.1:%1").arg(echoPort));
+
+    QSignalSpy opened(&pair.a, &TunnelManager::streamOpened);
+
+    QTcpSocket client;
+    client.connectToHost(QHostAddress::LocalHost, proxy.serverPort());
+    QTRY_COMPARE_WITH_TIMEOUT(client.state(), QAbstractSocket::ConnectedState, 3000);
+
+    const QByteArray payload = QByteArrayLiteral("hello-subnet");
+    client.write(payload);
+    QTRY_VERIFY_WITH_TIMEOUT(client.bytesAvailable() >= payload.size(), 3000);
+    EXPECT_EQ(client.readAll(), payload);
+
+    // Exercise chunking, the credit window and ACK handling on the dynamic
+    // stream as well.
+    QByteArray large(300 * 1024, 'x');
+    for (int i = 0; i < large.size(); ++i)
+        large[i] = static_cast<char>('a' + (i % 26));
+    client.write(large);
+    QTRY_VERIFY_WITH_TIMEOUT(client.bytesAvailable() >= large.size(), 10000);
+    EXPECT_EQ(client.readAll(), large);
+
+    // A dialed the announced target with the subnet-forward service.
+    ASSERT_EQ(opened.count(), 1);
+    EXPECT_EQ(opened.at(0).at(1).toString(), QStringLiteral("subnet-forward"));
+    ASSERT_EQ(pair.a._streams.size(), 1);
+    auto *stream = *pair.a._streams.begin();
+    EXPECT_EQ(stream->dstHost, QStringLiteral("127.0.0.1"));
+    EXPECT_EQ(stream->dstPort, echoPort);
+    // The audit counters saw both directions in full.
+    EXPECT_EQ(stream->relayedToPeer, qint64(payload.size() + large.size()));
+    EXPECT_EQ(stream->relayedToTarget, qint64(payload.size() + large.size()));
+
+    client.disconnectFromHost();
+    pair.b.stopAll();
+    pair.a.stopAll();
+}
+
+TEST(TunnelManagerTest, DynamicTargetRejectedBeforeDial)
+{
+    TunnelPair pair;
+    pair.wire();
+
+    SubnetForwardPolicy policy;
+    policy.allowedNetworks = QStringList { QStringLiteral("10.8.12.0/24") };
+    ASSERT_TRUE(pair.a.setSubnetForwardPolicy(policy));
+
+    // 203.0.113.x is reserved and never answers: a wrongly dialed attempt
+    // would surface as connect retries, not as an immediate policy answer.
+    QTcpServer proxy;
+    ASSERT_TRUE(proxy.listen(QHostAddress::LocalHost, 0));
+    acceptIntoDynamicStream(proxy, pair.b, QStringLiteral("203.0.113.7:80"));
+
+    QSignalSpy closed(&pair.b, &TunnelManager::streamClosed);
+
+    QTcpSocket client;
+    client.connectToHost(QHostAddress::LocalHost, proxy.serverPort());
+    QTRY_COMPARE_WITH_TIMEOUT(client.state(), QAbstractSocket::ConnectedState, 3000);
+
+    QTRY_VERIFY_WITH_TIMEOUT(closed.count() > 0, 2000);
+    EXPECT_EQ(closed.at(0).at(1).toString(), QStringLiteral("network not allowed"));
+    // The target side never opened a socket for it.
+    EXPECT_TRUE(pair.a._streams.isEmpty());
+    QTRY_COMPARE_WITH_TIMEOUT(client.state(), QAbstractSocket::UnconnectedState, 3000);
+
+    pair.b.stopAll();
+    pair.a.stopAll();
+}
+
+TEST(TunnelManagerTest, DynamicTargetPortRules)
+{
+    TunnelManager a;
+    a.setPeer(QStringLiteral("B"));
+    FrameSink sink;
+    a.setSendHandler(sink.handler());
+
+    SubnetForwardPolicy policy;
+    policy.allowedNetworks = QStringList { QStringLiteral("127.0.0.0/8") };
+    ASSERT_TRUE(a.setSubnetForwardPolicy(policy));
+
+    // The cooperation session port stays denied even inside an allowed
+    // network: forwarded traffic must never capture the tunnel itself.
+    a.onTunnelMessage(TUNNEL_OPEN,
+                      makeOpenPayload(501, TunnelManager::kSubnetForwardService, QStringLiteral("tok"),
+                                      QStringLiteral("127.0.0.1:51598")),
+                      QStringLiteral("B"));
+    bool ok = true;
+    QString reason;
+    ASSERT_TRUE(lastAck(sink, &ok, &reason));
+    EXPECT_FALSE(ok);
+    EXPECT_EQ(reason, QStringLiteral("port denied"));
+    EXPECT_TRUE(a._streams.isEmpty());
+
+    // An explicit allow list narrows the ports further.
+    SubnetForwardPolicy narrowed = policy;
+    narrowed.allowedPorts = QSet<quint16> { 8443 };
+    ASSERT_TRUE(a.setSubnetForwardPolicy(narrowed));
+
+    a.onTunnelMessage(TUNNEL_OPEN,
+                      makeOpenPayload(502, TunnelManager::kSubnetForwardService, QStringLiteral("tok"),
+                                      QStringLiteral("127.0.0.1:22")),
+                      QStringLiteral("B"));
+    ok = true;
+    ASSERT_TRUE(lastAck(sink, &ok, &reason));
+    EXPECT_FALSE(ok);
+    EXPECT_EQ(reason, QStringLiteral("port not allowed"));
+    EXPECT_TRUE(a._streams.isEmpty());
+
+    // The one allowed port dials through for real.
+    QTcpServer target;
+    const quint16 port = startEchoServer(target);
+    ASSERT_NE(port, 0);
+    QSignalSpy opened(&a, &TunnelManager::streamOpened);
+    a.onTunnelMessage(TUNNEL_OPEN,
+                      makeOpenPayload(503, TunnelManager::kSubnetForwardService, QStringLiteral("tok"),
+                                      QStringLiteral("127.0.0.1:%1").arg(port)),
+                      QStringLiteral("B"));
+    QTRY_VERIFY_WITH_TIMEOUT(opened.count() > 0, 3000);
+    EXPECT_EQ(a._streams.size(), 1);
+
+    a.stopAll();
+}
+
+TEST(TunnelManagerTest, DynamicTargetParsing)
+{
+    QString host;
+    quint16 port = 0;
+
+    EXPECT_TRUE(TunnelManager::parseDynamicTarget(QStringLiteral("10.8.12.5:22"), &host, &port));
+    EXPECT_EQ(host, QStringLiteral("10.8.12.5"));
+    EXPECT_EQ(port, 22);
+
+    EXPECT_TRUE(TunnelManager::parseDynamicTarget(QStringLiteral("127.0.0.1:65535"), &host, &port));
+    EXPECT_EQ(host, QStringLiteral("127.0.0.1"));
+    EXPECT_EQ(port, 65535);
+
+    // Hostnames, IPv6 and anything loosely formatted stay out: the dialer
+    // must never resolve or guess a peer supplied string.
+    EXPECT_FALSE(TunnelManager::parseDynamicTarget(QStringLiteral(""),
+                                                   nullptr, nullptr));
+    EXPECT_FALSE(TunnelManager::parseDynamicTarget(QStringLiteral("10.8.12.5"), nullptr, nullptr));
+    EXPECT_FALSE(TunnelManager::parseDynamicTarget(QStringLiteral("10.8.12.5:"), nullptr, nullptr));
+    EXPECT_FALSE(TunnelManager::parseDynamicTarget(QStringLiteral(":22"), nullptr, nullptr));
+    EXPECT_FALSE(TunnelManager::parseDynamicTarget(QStringLiteral("10.8.12.5:0"), nullptr, nullptr));
+    EXPECT_FALSE(TunnelManager::parseDynamicTarget(QStringLiteral("10.8.12.5:70000"), nullptr, nullptr));
+    EXPECT_FALSE(TunnelManager::parseDynamicTarget(QStringLiteral("10.8.12.5:22x"), nullptr, nullptr));
+    EXPECT_FALSE(TunnelManager::parseDynamicTarget(QStringLiteral("10.8.12.5: 22"), nullptr, nullptr));
+    EXPECT_FALSE(TunnelManager::parseDynamicTarget(QStringLiteral("example.com:80"), nullptr, nullptr));
+    EXPECT_FALSE(TunnelManager::parseDynamicTarget(QStringLiteral("::1:22"), nullptr, nullptr));
+    EXPECT_FALSE(TunnelManager::parseDynamicTarget(QStringLiteral("[10.8.12.5]:22"), nullptr, nullptr));
+    EXPECT_FALSE(TunnelManager::parseDynamicTarget(QStringLiteral("10.8.12.5:22:80"), nullptr, nullptr));
+    EXPECT_FALSE(TunnelManager::parseDynamicTarget(QStringLiteral("10.8.12.256:22"), nullptr, nullptr));
+    EXPECT_FALSE(TunnelManager::parseDynamicTarget(QStringLiteral("10.8.12:22"), nullptr, nullptr));
+
+    // A malformed destination inside a frame is answered, never dialed.
+    TunnelManager a;
+    a.setPeer(QStringLiteral("B"));
+    FrameSink sink;
+    a.setSendHandler(sink.handler());
+
+    SubnetForwardPolicy policy;
+    policy.allowedNetworks = QStringList { QStringLiteral("0.0.0.0/0") };
+    ASSERT_TRUE(a.setSubnetForwardPolicy(policy));
+
+    a.onTunnelMessage(TUNNEL_OPEN,
+                      makeOpenPayload(601, TunnelManager::kSubnetForwardService, QStringLiteral("tok"),
+                                      QStringLiteral("10.8.12.5")),
+                      QStringLiteral("B"));
+    bool ok = true;
+    QString reason;
+    ASSERT_TRUE(lastAck(sink, &ok, &reason));
+    EXPECT_FALSE(ok);
+    EXPECT_EQ(reason, QStringLiteral("bad target"));
+    EXPECT_TRUE(a._streams.isEmpty());
+
+    a.stopAll();
+}
+
+TEST(TunnelManagerTest, DynamicTargetRequiresPolicyAndPeer)
+{
+    TunnelManager a;
+    a.setPeer(QStringLiteral("B"));
+    FrameSink sink;
+    a.setSendHandler(sink.handler());
+
+    // Without an installed policy the service answers on the wire but
+    // refuses every destination.
+    a.onTunnelMessage(TUNNEL_OPEN,
+                      makeOpenPayload(701, TunnelManager::kSubnetForwardService, QStringLiteral("tok"),
+                                      QStringLiteral("127.0.0.1:80")),
+                      QStringLiteral("B"));
+    bool ok = true;
+    QString reason;
+    ASSERT_TRUE(lastAck(sink, &ok, &reason));
+    EXPECT_FALSE(ok);
+    EXPECT_EQ(reason, QStringLiteral("service disabled"));
+    EXPECT_TRUE(a._streams.isEmpty());
+
+    // An unexpected source is dropped without any answer at all.
+    const int sent = sink.frames.size();
+    a.onTunnelMessage(TUNNEL_OPEN,
+                      makeOpenPayload(702, TunnelManager::kSubnetForwardService, QStringLiteral("tok"),
+                                      QStringLiteral("127.0.0.1:80")),
+                      QStringLiteral("STRANGER"));
+    EXPECT_EQ(sink.frames.size(), sent);
+    EXPECT_TRUE(a._streams.isEmpty());
+
+    a.stopAll();
+}
+
+TEST(TunnelManagerTest, StaticServiceIgnoresDstField)
+{
+    QTcpServer echo;
+    const quint16 echoPort = startEchoServer(echo);
+    ASSERT_NE(echoPort, 0);
+
+    TunnelPair pair;
+    pair.wire();
+    ASSERT_TRUE(pair.a.registerService(QStringLiteral("echo"), QStringLiteral("127.0.0.1"), echoPort));
+
+    // A newer peer may attach a dst to any OPEN. For a static service the
+    // field is ignored and the registered address wins.
+    pair.a.onTunnelMessage(TUNNEL_OPEN,
+                           makeOpenPayload(801, QStringLiteral("echo"), QStringLiteral("tok"),
+                                           QStringLiteral("203.0.113.9:9999")),
+                           QStringLiteral("B"));
+
+    QSignalSpy opened(&pair.a, &TunnelManager::streamOpened);
+    QTRY_VERIFY_WITH_TIMEOUT(opened.count() > 0, 3000);
+    EXPECT_EQ(opened.at(0).at(1).toString(), QStringLiteral("echo"));
+    ASSERT_EQ(pair.a._streams.size(), 1);
+    EXPECT_TRUE((*pair.a._streams.begin())->dstHost.isEmpty());
+
+    pair.b.stopAll();
+    pair.a.stopAll();
+}
+
+TEST(TunnelManagerTest, DynamicTargetStreamLimit)
+{
+    QTcpServer echo;
+    const quint16 echoPort = startEchoServer(echo);
+    ASSERT_NE(echoPort, 0);
+
+    TunnelPair pair;
+    pair.wire();
+
+    SubnetForwardPolicy policy;
+    policy.allowedNetworks = QStringList { QStringLiteral("127.0.0.0/8") };
+    policy.maxStreams = 1;
+    ASSERT_TRUE(pair.a.setSubnetForwardPolicy(policy));
+
+    QTcpServer proxy;
+    ASSERT_TRUE(proxy.listen(QHostAddress::LocalHost, 0));
+    acceptIntoDynamicStream(proxy, pair.b, QStringLiteral("127.0.0.1:%1").arg(echoPort));
+
+    QTcpSocket first;
+    first.connectToHost(QHostAddress::LocalHost, proxy.serverPort());
+    QTRY_COMPARE_WITH_TIMEOUT(first.state(), QAbstractSocket::ConnectedState, 3000);
+    first.write(QByteArrayLiteral("one"));
+    QTRY_VERIFY_WITH_TIMEOUT(first.bytesAvailable() >= 3, 3000);
+    EXPECT_EQ(first.readAll(), QByteArrayLiteral("one"));
+
+    // The second stream passes the dialing side but is rejected by policy.
+    QSignalSpy closed(&pair.b, &TunnelManager::streamClosed);
+    QTcpSocket second;
+    second.connectToHost(QHostAddress::LocalHost, proxy.serverPort());
+    QTRY_COMPARE_WITH_TIMEOUT(second.state(), QAbstractSocket::ConnectedState, 3000);
+    QTRY_VERIFY_WITH_TIMEOUT(closed.count() > 0, 3000);
+    EXPECT_EQ(closed.at(0).at(1).toString(), QStringLiteral("too many streams"));
+    QTRY_COMPARE_WITH_TIMEOUT(second.state(), QAbstractSocket::UnconnectedState, 3000);
+
+    // The first stream is unaffected.
+    first.write(QByteArrayLiteral("still"));
+    QTRY_VERIFY_WITH_TIMEOUT(first.bytesAvailable() >= 5, 3000);
+    EXPECT_EQ(first.readAll(), QByteArrayLiteral("still"));
+
+    pair.b.stopAll();
+    pair.a.stopAll();
+}
+
+TEST(TunnelManagerTest, SubnetForwardPolicyValidation)
+{
+    TunnelManager a;
+    a.setPeer(QStringLiteral("B"));
+    FrameSink sink;
+    a.setSendHandler(sink.handler());
+
+    SubnetForwardPolicy bad;
+    bad.allowedNetworks = QStringList { QStringLiteral("10.8.12.0/33") };
+    EXPECT_FALSE(a.setSubnetForwardPolicy(bad));
+    bad.allowedNetworks = QStringList { QStringLiteral("10.8.12.0/24"), QStringLiteral("300.1.2.3/8") };
+    EXPECT_FALSE(a.setSubnetForwardPolicy(bad));
+    bad.allowedNetworks = QStringList { QStringLiteral("10.8.12.0/24") };
+    bad.allowedHosts = QStringList { QStringLiteral("10.8.12.300") };
+    EXPECT_FALSE(a.setSubnetForwardPolicy(bad));
+    bad.allowedHosts = QStringList { QStringLiteral("10.8.12.5") };
+    bad.maxStreams = -1;
+    EXPECT_FALSE(a.setSubnetForwardPolicy(bad));
+    bad.maxStreams = 1000;
+    EXPECT_FALSE(a.setSubnetForwardPolicy(bad));
+
+    // Every rejected policy left the service uninstalled.
+    a.onTunnelMessage(TUNNEL_OPEN,
+                      makeOpenPayload(901, TunnelManager::kSubnetForwardService, QStringLiteral("tok"),
+                                      QStringLiteral("10.8.12.5:443")),
+                      QStringLiteral("B"));
+    bool ok = true;
+    QString reason;
+    ASSERT_TRUE(lastAck(sink, &ok, &reason));
+    EXPECT_FALSE(ok);
+    EXPECT_EQ(reason, QStringLiteral("service disabled"));
+
+    // A valid policy applies and answers target queries directly.
+    SubnetForwardPolicy good;
+    good.allowedNetworks = QStringList { QStringLiteral("10.8.12.0/24") };
+    good.allowedHosts = QStringList { QStringLiteral("10.8.12.5") };
+    ASSERT_TRUE(a.setSubnetForwardPolicy(good));
+
+    EXPECT_TRUE(a.targetAllowed(QStringLiteral("10.8.12.5"), 443, &reason));
+    EXPECT_FALSE(a.targetAllowed(QStringLiteral("10.8.12.6"), 443, &reason));
+    EXPECT_EQ(reason, QStringLiteral("host not allowed"));
+    EXPECT_FALSE(a.targetAllowed(QStringLiteral("10.8.13.5"), 443, &reason));
+    EXPECT_EQ(reason, QStringLiteral("network not allowed"));
+    EXPECT_FALSE(a.targetAllowed(QStringLiteral("10.8.12.5"), 51598, &reason));
+    EXPECT_EQ(reason, QStringLiteral("port denied"));
+    // The host list narrows the network: other hosts of the same network are
+    // refused even on allowed ports.
+    EXPECT_FALSE(a.targetAllowed(QStringLiteral("10.8.12.255"), 8080, &reason));
+    EXPECT_EQ(reason, QStringLiteral("host not allowed"));
+
+    // Prefix containment decides, not the host address itself.
+    SubnetForwardPolicy half;
+    half.allowedNetworks = QStringList { QStringLiteral("10.8.12.128/25") };
+    ASSERT_TRUE(a.setSubnetForwardPolicy(half));
+    EXPECT_TRUE(a.targetAllowed(QStringLiteral("10.8.12.128"), 443, &reason));
+    EXPECT_FALSE(a.targetAllowed(QStringLiteral("10.8.12.127"), 443, &reason));
+    EXPECT_EQ(reason, QStringLiteral("network not allowed"));
+
+    a.stopAll();
+}
+
+TEST(TunnelManagerTest, ClearPolicyTearsDownActiveStreams)
+{
+    QTcpServer echo;
+    const quint16 echoPort = startEchoServer(echo);
+    ASSERT_NE(echoPort, 0);
+
+    TunnelPair pair;
+    pair.wire();
+
+    SubnetForwardPolicy policy;
+    policy.allowedNetworks = QStringList { QStringLiteral("127.0.0.0/8") };
+    ASSERT_TRUE(pair.a.setSubnetForwardPolicy(policy));
+
+    QTcpServer proxy;
+    ASSERT_TRUE(proxy.listen(QHostAddress::LocalHost, 0));
+    acceptIntoDynamicStream(proxy, pair.b, QStringLiteral("127.0.0.1:%1").arg(echoPort));
+
+    QTcpSocket client;
+    client.connectToHost(QHostAddress::LocalHost, proxy.serverPort());
+    QTRY_COMPARE_WITH_TIMEOUT(client.state(), QAbstractSocket::ConnectedState, 3000);
+    client.write(QByteArrayLiteral("flowing"));
+    QTRY_VERIFY_WITH_TIMEOUT(client.bytesAvailable() >= 7, 3000);
+    EXPECT_EQ(client.readAll(), QByteArrayLiteral("flowing"));
+
+    QSignalSpy closed(&pair.b, &TunnelManager::streamClosed);
+    pair.a.clearSubnetForwardPolicy();
+    QTRY_COMPARE_WITH_TIMEOUT(client.state(), QAbstractSocket::UnconnectedState, 3000);
+    EXPECT_TRUE(pair.a._streams.isEmpty());
+    EXPECT_TRUE(pair.b._streams.isEmpty());
+    const int closedBefore = closed.count();
+    EXPECT_GT(closedBefore, 0);
+
+    // New opens are refused until a policy is installed again.
+    QTcpSocket second;
+    second.connectToHost(QHostAddress::LocalHost, proxy.serverPort());
+    QTRY_COMPARE_WITH_TIMEOUT(second.state(), QAbstractSocket::ConnectedState, 3000);
+    QTRY_VERIFY_WITH_TIMEOUT(closed.count() > closedBefore, 3000);
+    EXPECT_EQ(closed.at(closed.count() - 1).at(1).toString(), QStringLiteral("service disabled"));
+
+    pair.b.stopAll();
+    pair.a.stopAll();
 }
