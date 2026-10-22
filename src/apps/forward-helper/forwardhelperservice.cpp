@@ -22,9 +22,9 @@ using namespace SubnetForwardRules;
 using namespace SubnetForwardExec;
 
 namespace {
-constexpr const char *kPolkitService = "org.freedesktop.Polkit1.Authority";
-constexpr const char *kPolkitPath = "/org/freedesktop/Polkit1/Authority";
-constexpr const char *kPolkitInterface = "org.freedesktop.Polkit1.Authority";
+constexpr const char *kPolkitService = "org.freedesktop.PolicyKit1";
+constexpr const char *kPolkitPath = "/org/freedesktop/PolicyKit1/Authority";
+constexpr const char *kPolkitInterface = "org.freedesktop.PolicyKit1.Authority";
 constexpr const char *kActionSetup = "org.deepin.dde.cooperation.forward.setup";
 constexpr const char *kActionTeardown = "org.deepin.dde.cooperation.forward.teardown";
 constexpr int kPolkitTimeoutMs = 5000;
