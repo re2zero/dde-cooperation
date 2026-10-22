@@ -59,6 +59,7 @@ private:
 
     QString m_spec;
     QString m_caller;
+    QString m_lastError;
     QDBusServiceWatcher *m_watcher { nullptr };
 };
 

@@ -92,6 +92,7 @@ int ForwardHelperService::Setup(const QString &specJson)
     QString error;
     if (!authorize(kActionSetup, &error)) {
         qWarning() << "subnet-forward: Setup denied for" << caller << ":" << error;
+        m_lastError = QStringLiteral("Setup denied: %1").arg(error);
         return 1;
     }
 
@@ -100,12 +101,14 @@ int ForwardHelperService::Setup(const QString &specJson)
     QString reason;
     if (!ok || !spec.isValid(&reason)) {
         qWarning() << "subnet-forward: invalid spec from" << caller << ":" << reason;
+        m_lastError = QStringLiteral("invalid spec: %1").arg(reason);
         return 2;
     }
 
     switch (detectBackend()) {
     case Backend::None:
         qWarning() << "subnet-forward: neither nft nor iptables available";
+        m_lastError = QStringLiteral("neither nft nor iptables available");
         return 3;
     case Backend::Nft:
         // Recreate from scratch: repeated Setup calls converge to the same
@@ -114,6 +117,7 @@ int ForwardHelperService::Setup(const QString &specJson)
             runTolerant(command);
         if (!applyNft(spec, &error)) {
             qWarning() << "subnet-forward: nft apply failed:" << error;
+            m_lastError = QStringLiteral("nft apply failed: %1").arg(error);
             for (const QStringList &command : nftRemoveCommands())
                 runTolerant(command);
             return 3;
@@ -129,6 +133,7 @@ int ForwardHelperService::Setup(const QString &specJson)
             }
             if (!runCommand(commands.at(i), &error)) {
                 qWarning() << "subnet-forward: iptables apply failed:" << error;
+                m_lastError = QStringLiteral("iptables apply failed: %1").arg(error);
                 for (const QStringList &command : iptablesRemoveCommands())
                     runTolerant(command);
                 return 3;
@@ -142,6 +147,7 @@ int ForwardHelperService::Setup(const QString &specJson)
     installWatcher(caller);
     m_spec = specJson;
     m_caller = caller;
+    m_lastError.clear();
 
     qWarning() << "subnet-forward: rules applied for" << caller << "backend"
                << backendName(detectBackend()) << "proxy port" << spec.proxyPort
@@ -157,6 +163,7 @@ int ForwardHelperService::Teardown()
     QString error;
     if (!authorize(kActionTeardown, &error)) {
         qWarning() << "subnet-forward: Teardown denied:" << error;
+        m_lastError = QStringLiteral("Teardown denied: %1").arg(error);
         return 1;
     }
 
@@ -170,6 +177,7 @@ QString ForwardHelperService::Status() const
     object.insert(QStringLiteral("active"), !m_spec.isEmpty());
     object.insert(QStringLiteral("backend"), backendName(detectBackend()));
     object.insert(QStringLiteral("caller"), m_caller);
+    object.insert(QStringLiteral("lastError"), m_lastError);
     if (!m_spec.isEmpty()) {
         const QJsonDocument spec = QJsonDocument::fromJson(m_spec.toUtf8());
         if (spec.isObject())
