@@ -5,6 +5,7 @@
 #include "tunnelmanager.h"
 
 #include "common/log.h"
+#include "subnetforwardutil.h"
 #include "tunnelproto.h"
 
 #include <QAbstractSocket>
@@ -38,57 +39,6 @@ bool parseStreamId(const QJsonObject &object, quint32 *id)
         return false;
 
     *id = static_cast<quint32>(value);
-    return true;
-}
-
-// Strict IPv4 CIDR parser: "a.b.c.d" optionally followed by "/prefix".
-// Anything that is not exactly that is a configuration error and must fail
-// closed, so the policy parser can never be talked into a wider range than
-// the operator typed.
-bool parseCidr4(const QString &entry, QHostAddress *network, int *prefix)
-{
-    const int slash = entry.indexOf(QLatin1Char('/'));
-    const QString addressPart = slash < 0 ? entry : entry.left(slash);
-
-    // Reject partial forms ("10.8.12", "10.8.12.") and any non-digit
-    // separator noise regardless of what the platform resolver accepts.
-    const QStringList parts = addressPart.split(QLatin1Char('.'));
-    if (parts.size() != 4)
-        return false;
-    for (const QString &part : parts) {
-        if (part.isEmpty() || part.size() > 3)
-            return false;
-        for (const QChar &c : part) {
-            if (!c.isDigit())
-                return false;
-        }
-        bool ok = false;
-        const int octet = part.toInt(&ok);
-        if (!ok || octet > 255)
-            return false;
-    }
-
-    const QHostAddress address(addressPart);
-    if (address.isNull() || address.protocol() != QAbstractSocket::IPv4Protocol)
-        return false;
-
-    int length = 32;
-    if (slash >= 0) {
-        const QString prefixPart = entry.mid(slash + 1);
-        if (prefixPart.isEmpty() || prefixPart.size() > 2)
-            return false;
-        for (const QChar &c : prefixPart) {
-            if (!c.isDigit())
-                return false;
-        }
-        bool ok = false;
-        length = prefixPart.toInt(&ok);
-        if (!ok || length < 0 || length > 32)
-            return false;
-    }
-
-    *network = address;
-    *prefix = length;
     return true;
 }
 }
@@ -134,7 +84,7 @@ bool TunnelManager::setSubnetForwardPolicy(const SubnetForwardPolicy &policy)
     for (const QString &entry : policy.allowedNetworks) {
         QHostAddress network;
         int prefix = 0;
-        if (!parseCidr4(entry, &network, &prefix)) {
+        if (!SubnetForward::parseCidr4(entry, &network, &prefix)) {
             WLOG << "TunnelManager: invalid subnet-forward network entry:"
                  << entry.toStdString();
             return false;
@@ -236,51 +186,9 @@ quint32 TunnelManager::openDynamicStream(const QString &dst, QTcpSocket *socket)
 
 bool TunnelManager::parseDynamicTarget(const QString &dst, QString *host, quint16 *port)
 {
-    // Exactly "a.b.c.d:port". One colon only keeps IPv6 literals and scoped
-    // addresses out; the host must be a literal so neither end ever resolves
-    // a peer supplied name.
-    if (dst.isEmpty() || dst.size() > 21)
-        return false;
-
-    const int colon = dst.indexOf(QLatin1Char(':'));
-    if (colon <= 0 || colon != dst.lastIndexOf(QLatin1Char(':')))
-        return false;
-
-    const QString hostPart = dst.left(colon);
-    const QString portPart = dst.mid(colon + 1);
-    if (portPart.isEmpty() || portPart.size() > 5)
-        return false;
-    for (const QChar &c : portPart) {
-        if (!c.isDigit())
-            return false;
-    }
-
-    const QStringList parts = hostPart.split(QLatin1Char('.'));
-    if (parts.size() != 4)
-        return false;
-    for (const QString &part : parts) {
-        if (part.isEmpty() || part.size() > 3)
-            return false;
-        for (const QChar &c : part) {
-            if (!c.isDigit())
-                return false;
-        }
-        bool ok = false;
-        const int octet = part.toInt(&ok);
-        if (!ok || octet > 255)
-            return false;
-    }
-
-    bool ok = false;
-    const ushort portValue = portPart.toUShort(&ok);
-    if (!ok || portValue == 0)
-        return false;
-
-    if (host)
-        *host = hostPart;
-    if (port)
-        *port = portValue;
-    return true;
+    // Delegates to the shared parser so the tunnel, the transparent proxy and
+    // the privileged helper all accept exactly the same destinations.
+    return SubnetForward::parseIpPort(dst, host, port);
 }
 
 void TunnelManager::setPeer(const QString &peerIp)
