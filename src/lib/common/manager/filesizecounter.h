@@ -7,6 +7,8 @@
 
 #include <QThread>
 
+#include <atomic>
+
 class FileSizeCounter : public QThread
 {
     Q_OBJECT
@@ -28,7 +30,8 @@ private:
     QStringList _paths;
     QString _targetIp;
     quint64 _totalSize {0};
-    bool _stoped { true };
+    // stop() runs on the UI thread while run() reads the flag.
+    std::atomic<bool> _stoped { true };
 };
 
 #endif // FILESIZECOUNTER_H
