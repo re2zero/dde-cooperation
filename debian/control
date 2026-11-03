@@ -15,6 +15,7 @@ Build-Depends:
  libdtk6core-dev,
  libssl-dev,
  libzip-dev,
+ libzstd-dev,
  libcurl4-openssl-dev,
  libxtst-dev,
  libavahi-compat-libdnssd-dev,
