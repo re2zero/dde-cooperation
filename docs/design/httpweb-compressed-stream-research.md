@@ -424,7 +424,7 @@ zstd 和 zlib 的字节流互不兼容：zlib 解不了 zstd，zstd 也解不了
 |---|---|---|
 | none | 0 | 不压缩，用于基准/纯媒体目录 |
 | deflate | 1 | zlib，**协议基线，所有实现必须支持；对端不支持 zstd 时使用** |
-| zstd | 2 | **新版默认**；双方都支持时优先使用；新版默认依赖并优先静态链接 |
+| zstd | 2 | **新版默认**；双方都支持时优先使用；Linux 共享库、Windows/Android 静态 |
 
 > **当前项目决策**：新版发布默认依赖 zstd，并默认使用 zstd；协议协商保留 deflate 作为基线回退。这样既能让新版本默认获得更好的压缩效率，也能兼容只带 deflate 的对端。
 
@@ -465,11 +465,12 @@ flowchart TB
 - 因此无论是否强依赖 zstd，协议都必须保留 deflate 基线，并做 per-transfer 协商。
 - “强依赖”只解决“这个构建有没有 zstd”的问题，不解决“对端有没有 zstd”的问题。
 
-> 按当前项目决策：新版默认依赖并默认使用 zstd（优先静态链接）；但上述兼容规则不变——旧端走 legacy，仅 deflate 的对端协商到 deflate。
+> 按当前项目决策：新版默认依赖并默认使用 zstd（Linux 共享库、Windows/Android 静态）；但上述兼容规则不变——旧端走 legacy，仅 deflate 的对端协商到 deflate。
 
 **运行时依赖的坑：**
 
 - Linux 动态链接：`find_package(zstd)` 成功后，二进制依赖 `libzstd.so.1`；UOS 默认有，但这是“运行时依赖”，不是代码能保证的。deb 包应声明 `Depends: libzstd1`；AppImage/Flatpak 应打包。
+- **Linux 静态链接要防符号插入**：把 `libzstd.a` 链进共享库（本项目是 `libcooperation-core.so`）会把 `ZSTD_*`/`HUF_*` 导出到全局符号表；如果进程里另一个依赖又加载了 `libzstd.so.1`（本机由 `libsystemd` 带入），动态链接器会把一部分调用解析到另一份副本，`ZSTD_createDCtx` 与 `ZSTD_decompressStream` 的上下文布局不一致，进程在 `HUF_readDTableX2_wksp` 崩溃（本项目 10 万文件 zstd 往返用例实测复现）。Linux 建议共享链接；确实要静态，必须用 `-Wl,--exclude-libs,ALL` 或全隐藏符号。
 - Windows：如果动态链接，安装包必须带 `zstd.dll`；否则程序启动或使用时失败。推荐 vcpkg 静态链接（如 `zstd:x64-windows-static`），避免 DLL 部署问题。
 - Android：按 ABI 静态链接 libzstd。
 - 不建议用 `dlopen` 做“有就用、没有就退回”的运行时探测：行为不确定、测试矩阵复杂；如果确实要可选，用构建期宏 + 明确的 fallback 更可控。
@@ -479,7 +480,7 @@ flowchart TB
 **当前决策：**
 
 1. **跨端兼容**：协议协商 codec；deflate 永久保留为基线，任何新实现都必须能解 deflate。
-2. **新版发布**：默认依赖 zstd，并默认使用 zstd。优先在 Linux/Windows/Android 都静态链接 zstd；如果只能动态链接，安装包/包管理器必须显式携带或声明依赖，不能依赖“系统碰巧装了”。
+2. **新版发布**：默认依赖 zstd，并默认使用 zstd。**已定稿（2026-11-03，D3）**：Linux 因上述符号插入风险使用共享链接（`libzstd1` 由包管理器声明）；Windows/Android 静态链接，不带额外 DLL/SO。如果动态链接，安装包/包管理器必须显式携带或声明依赖，不能依赖“系统碰巧装了”。
 3. **传输选择**：双方都支持 zstd 时默认 zstd；否则协商到 deflate；对端是旧版本时走 legacy。
 4. **实现顺序**：先把 deflate 路径打通（它是回退路径，必须有测试覆盖），再启用 zstd 默认。这样即使某个平台打包异常，也能降级验证。
 5. **zstd 使用约束**：使用标准 zstd frame，不启用实验特性/字典；压缩级别 1–3，不要默认 19；避免老版本 libzstd 不兼容。
@@ -647,6 +648,13 @@ tokenHash, rootName, frameIndex, offset, fileSize, mtime, completedBytes
 - 帧格式/CRC 错误：中止当前流，删除当前 `.part`，从最近 checkpoint 重试；连续失败则报错。
 - 不允许“失败后仍发 TRANS_WHOLE_FINISH”。
 
+**实现落地（Phase 4，2026-11-03）：**
+
+- checkpoint 只存 `from`（已完成帧数）与 base64 根路径，落在 `<temp>/dde-cooperation-checkpoints/<FNV64(token,name)>.ckpt`；不存 offset/size/mtime，`off>0` 仍返回 501（D6：v1 整文件粒度）。
+- 每帧回调、1s 节流写盘，失败时立即写；临时文件+原子 rename；损坏/丢失/续传冲突自动从 0 开始并换新根，避免覆盖旧树。
+- 重试最多 3 次，退避 200/800ms；网络/截断/超时重试，磁盘/路径/协议错误直接失败；空闲 60s 由 watchdog 断开（`DDE_COOPERATION_HTTPWEB_STREAM_IDLE_TIMEOUT` 可调）。
+- 故障注入已验证：TCP 代理在 100KB 处切断、以及挂起不转发，均能自动 `from=N` 续传并逐字节一致；`lib_logic_tests` 322/322 通过。
+
 ### 4.9 接口兼容与灰度
 
 **公开 API 不变：**
@@ -700,7 +708,7 @@ tokenHash, rootName, frameIndex, offset, fileSize, mtime, completedBytes
 | 风险 | 说明 | 缓解 |
 |---|---|---|
 | 压缩 CPU | 弱 ARM 设备上压缩仍可能成为瓶颈 | 新版默认 zstd level 1–3；保留 deflate/none 作为降级 |
-| zstd 依赖/打包 | 新版默认依赖 zstd；Linux/Windows/Android 的链接与打包方式不同 | 优先静态链接；安装包携带或声明依赖；保留 deflate 回退 |
+| zstd 依赖/打包 | 新版默认依赖 zstd；Linux/Windows/Android 的链接与打包方式不同 | Linux 共享（声明 `libzstd1`）；Windows/Android 静态；保留 deflate 回退 |
 | 磁盘 I/O | 100k 小文件的创建/读取在 HDD 上仍然慢 | 复用缓冲、减少 syscall、避免 fsync；验收区分网络/磁盘时间 |
 | `Connection: close` | 每个顶层项一次 TLS 握手 | 通常只选一个目录；多顶层项时 v2 上 chunked/连接复用 |
 | 断点与源变化 | 传输期间源目录变化会导致索引错位 | v1 假设源不变；检测 size/mtime；不匹配则重传/报错 |
@@ -722,17 +730,212 @@ tokenHash, rootName, frameIndex, offset, fileSize, mtime, completedBytes
 | Phase 4 | `PauseReceive`/`ResumeReceive`、checkpoint、watchdog、故障注入 | 断点/背压/停止不僵死 |
 | Phase 5 | zstd 静态链接/打包、兼容矩阵、100k 基准、灰度 | 三平台构建 + 发布候选 |
 
-> 实验验证章节待 Phase 5 填充真实数据。
+> 实验验证章节：Phase 0 已记录 legacy 基线（6.2）；Phase 3 端到端打通后已补 1k/10k stream 实测（6.3）；100k 与 1M/10GB、故障注入留待 Phase 5。
 
 ## 6. 实验验证
 
-> 本节待补充。后续补充：100k/1M 小文件、10 GB 大文件、混合目录、断网/磁盘满/停止等故障注入、新旧版本兼容矩阵，以及吞吐、CPU、RSS、syscall、请求数、停顿次数等指标。
+### 6.1 对照实验设计（改造前 vs 改造后）
+
+目标不是“证明新方案更快”，而是把**协议形态变化带来的收益**和**环境/实现细节带来的噪声**分开，避免把 Nagle、页缓存、磁盘预热算进方案收益。
+
+**控制变量**
+
+| 维度 | 做法 |
+|---|---|
+| 数据集 | 同一份数据集，生成命令与随机种子固定；1k/10k/100k×4KB、1M×1KB、10GB 单文件、混合树 |
+| 机器与进程 | 同一台机器、同一构建类型（Release）、单进程内 loopback，server/client 各自独立 IO 线程 |
+| 校验 | 每个文件按 SHA/CRC 逐个比对，文件数、总字节、相对路径集合三者都要一致；不一致的数据作废 |
+| 重复 | 每个配置至少跑 2 次；首次含页缓存冷启动，第二次为热缓存，两次都记录 |
+| 指标 | 墙钟、CPU user/sys、RSS 峰值、最长无数据停顿、HTTP 请求数/连接数、每文件传输与周期、失败数 |
+| 计时口径 | 只计 `startFileDownload` 到 `WEB_TRANS_FINISH`，不含建连/证书生成/数据集扫描 |
+
+**必须成对测量的原因**
+
+Phase 0 基线暴露出一个会污染 A/B 的因素：legacy 每文件约 40 ms 的延迟来自 **Nagle + delayed ACK**（服务端先发响应头、再发首块 body，两次小写；`TCPServer::_option_no_delay` 默认 false）。如果直接拿“现状 legacy”对比“新 stream”，这部分延迟会被误算成协议收益。
+
+因此每个配置都测两种网络设置：
+
+- `nodelay=0`：显式关闭（Nagle 开），复现 2026-11-03 之前的现状。
+- `nodelay=1`：服务端 `TCP_NODELAY` 开（2026-11-03 起为生产默认，见 D11）。
+
+> 生产默认已改为 nodelay=1。基准工具在 `start()` 之后显式覆盖该选项，因此不带 `--no-delay` 仍能复现 nodelay=0 的历史基线；这一点保证了下表数据可重放。
+
+**协议收益 = (legacy, nodelay=0) 对 (stream, nodelay=0) 的差值**，用于回答“换协议值不值”；
+**Nagle 收益 = 同一路径 nodelay=1 对 nodelay=0 的差值**，用于回答“一行 socket 选项值不值”；
+**残余成本 = (legacy, nodelay=1)**，代表去掉 Nagle 后 legacy 的协议/文件系统下限，也是 stream 必须打败的对手。
+
+### 6.2 改造前基线（legacy，实测）
+
+环境：Linux 6.6、Qt6、Release、单进程 loopback、1000/10000 个 4KB 文本文件、逐文件 CRC32 校验通过。数据来源：`tests/benchmarks/httpweb_transfer_benchmark`（见 6.4）。
+
+| 配置 | 文件数 | 墙钟 | 每文件周期 | 每文件传输 | CPU user/sys | RSS 峰值 | 最长停顿 | 请求数 |
+|---|---|---|---|---|---|---|---|---|
+| legacy, nodelay=0 | 1 000 | 44.8 s | 44.8 ms | 40.7 ms | 1.31/0.44 s | 12.6 MB | 57 ms | 3 HEAD + 22 info + 1000 download |
+| legacy, nodelay=1 | 1 000 | 4.44 s | 4.38 ms | 0.021 ms | 1.12/0.24 s | 12.9 MB | 56 ms | 同上 |
+| legacy, nodelay=0 | 10 000 | 448 s | 44.8 ms | 40.7 ms | 13.7/4.5 s | 14.0 MB | 233 ms | 3 HEAD + 74 info + 10000 download |
+| legacy, nodelay=0 | 100 000 | 4 484 s（74.7 min） | 44.7 ms | 40.6 ms | 135.3/43.4 s | 22.8 MB | 12.2 s | 3 HEAD + 274 info + 100000 download |
+
+**读数**
+
+1. 每文件周期在 1k/10k/100k 上完全一致（44.7–44.8 ms），说明成本是“每文件固定开销”，与文件大小、树规模基本无关；100k 实测 4 484 s，与线性预估一致。
+2. `nodelay=1` 后每文件传输从 40.7 ms 掉到 0.021 ms，证明这 40 ms 是 Nagle/延迟 ACK，不是协议处理或磁盘。协议真正的下限是 **4.4 ms/文件**。
+3. CPU 只占 4%（10k：18.2 s / 448 s），96% 在等待；优化方向是减少往返和等待，不是减少计算。
+4. RSS 不随文件数增长（12.6 MB → 14.0 MB），内存不是当前瓶颈。
+5. 请求数严格线性：每非空文件 1 次 `download`，每目录 1 次 `info`（根目录 2 次），外加 3 次 HEAD。
+
+### 6.3 改造后（stream，实测）
+
+同一台机器、同一批数据集、同一 Release 构建；每轮使用独立端口，避免 `SO_REUSEPORT` 把连接分到上一轮残留的 listener。命令见 6.4。
+
+| 配置 | 文件数 | 墙钟 | 每文件周期 | 每文件传输 | CPU user/sys | RSS 峰值 | 最长停顿 | HTTP 请求数 | 校验 |
+|---|---|---|---|---|---|---|---|---|---|
+| stream, nodelay=0 | 1 000 | 0.057 s | 0.027 ms | 0.013 ms | 0.037/0.030 s | 17.8 MB | 20 ms | 3 HEAD + 1 download + 0 info | ok |
+| stream, nodelay=1 | 1 000 | 0.053 s | 0.027 ms | 0.013 ms | 0.059/0.046 s | 16.9 MB | 20 ms | 同上 | ok |
+| stream, nodelay=0 | 10 000 | 0.275 s | 0.024 ms | 0.011 ms | 0.247/0.276 s | 20.4 MB | 20 ms | 3 HEAD + 1 download + 0 info | ok |
+| stream, nodelay=0 | 100 000 | 2.50 s | 0.025 ms | 0.011 ms | 2.40/2.76 s | 21.4 MB | 27 ms | 3 HEAD + 1 download + 0 info | ok |
+
+压缩：默认 zstd level 3（本机 `HTTPWEB_HAVE_ZSTD=1`）；4KB 文本数据集逐文件压缩后总字节未单独计数，端到端墙钟已包含压缩/解压成本。两次运行均通过 `verifyTrees`：文件数、总字节、相对路径、逐文件内容一致。
+
+**与 6.2 的对照**
+
+| 指标（10 000×4KB） | legacy, nodelay=0 | legacy, nodelay=1 | stream | 结论 |
+|---|---|---|---|---|
+| 墙钟 | 448 s | 45.6 s | 0.275 s | stream 比 legacy 快 **1 629×**，比“去掉 Nagle 的 legacy”仍快 **166×** |
+| CPU（user+sys） | 18.6 s | 15.2 s | 0.52 s | CPU 降低 **35×**；旧路径的成本主要是 1 万次 TLS/HTTP 事务 |
+| HTTP download 请求 | 10 000 | 10 000 | 1 | 请求数与文件数解耦，这是主要收益 |
+| info 请求 | 74 | 74 | 0 | 不再需要逐层列目录 |
+| 连接数 | 1 | 1 | 2 | 一条用于 HEAD，一条用于 stream；仍与文件数无关 |
+| RSS 峰值 | 14.0 MB | 14.0 MB | 20.4 MB | 增加约 6.4 MB：zstd 上下文 + 4 MB 接收队列高水位 + 解压缓冲 |
+| 最长无数据停顿 | 233 ms | — | 20 ms | 停顿不再随文件数累积 |
+| 每文件周期 | 44.8 ms | 4.56 ms | 0.024 ms | 小文件不再有逐文件事务/ACK 成本 |
+
+100k 规模（实测）：legacy **4 484 s**（CPU 178.7 s，RSS 22.8 MB，最长停顿 **12.2 s**）→ stream **2.50 s**（CPU 5.16 s，RSS 21.4 MB，最长停顿 27 ms），墙钟 **1 793×**、CPU **35×**。Phase 4 完成后复测 10k **0.276 s**、100k **2.58 s**，与上表差异在 ±3% 噪声内。legacy 的最长停顿随文件数放大到十几秒，正是“卡住/像死机”体验的来源；stream 的最长停顿与文件数无关。
+
+1k 数据集同样成立：44.9 s → 0.057 s（787×）；相对 nodelay=1 的 4.65 s 仍快 82×。100k 数据集 stream 为 2.50 s，逐文件周期仍为 0.025 ms，说明成本与文件数线性但常数极小；RSS 仅比 10k 增加 1 MB，有界队列生效。legacy 100k 实测 4 484 s，树校验一致。
+
+**大规模验收（Phase 5，NVMe `/var/tmp`，两端 Nagle 关闭）：**
+
+| 配置 | 规模 | 墙钟 | CPU user/sys | RSS 峰值 | 最长停顿 | 逐文件周期 | 校验 |
+|---|---|---|---|---|---|---|---|
+| stream | 1 000 000 × 4 KB（4 GB） | 58.5 s | 33.1/71.5 s | 56.5 MB | 42 ms | 0.058 ms | ok |
+| stream | 1 × 10 GB 单文件 | 42.3 s | 14.7/9.7 s | 20.0 MB | 765 ms | — | ok |
+
+- 1M 用例中 4 GB 数据在 58.5 s 内完成（约 17 000 文件/s），瓶颈已从协议转为文件系统元数据；同一份数据放到 HDD 上传输会退化到约 700 文件/s，说明“小文件海量”场景必须把存储介质与协议收益分开看。
+- 10 GB 用例的峰值 RSS 仍为 20 MB，说明发送/接收都是常量内存流水线；数据由 128 KB 随机块重复构成，zstd 可压缩，因此该用例验证的是 10 GB 流的完整性、uint64 偏移和背压，不代表不可压缩数据的线速。
+- 10 GB 最长 765 ms 停顿来自首块读取/压缩上下文建立；相对 legacy 100k 的 12.2 s 停顿仍低一个数量级。
+
+**收益拆分（按 6.1 口径）**
+
+- **协议收益**：legacy(nodelay=0) → stream(nodelay=0)，10k 为 448 s → 0.275 s；其中绝大部分来自“1 万次请求变成 1 次”，压缩是第二位的。
+- **Nagle 收益**：legacy 自身 nodelay=1 为 10.2×（44.8 s → 4.4 s，1k）；这是一个可以单独拿走的 socket 层修复。
+- **残余成本**：即使拿走 Nagle，legacy 仍有 4.56 ms/文件的协议与文件系统下限；stream 把它降到 0.024 ms。
+- **代价**：RSS +6.4 MB、实现复杂度、单连接失败影响整个顶层项；这些在 6.5 中列出。
+
+### 6.4 复现命令
+
+```bash
+cmake -S . -B build-bench -DCMAKE_BUILD_TYPE=Release -DBUILD_HTTPWEB_BENCH=ON
+cmake --build build-bench -j"$(nproc)" --target httpweb_transfer_benchmark
+
+# 数据集
+./build-bench/tests/benchmarks/httpweb_transfer_benchmark \
+  --generate /tmp/dtp-10k --files 10000 --size 4096 --dirs 64 --depth 2
+
+# 改造前（--legacy 会显式关闭 stream，保证测的是旧路径）
+./build-bench/tests/benchmarks/httpweb_transfer_benchmark \
+  --legacy --src /tmp/dtp-10k --dst /tmp/dtp-10k-out --port 28602 --timeout 1200
+./build-bench/tests/benchmarks/httpweb_transfer_benchmark \
+  --legacy --src /tmp/dtp-10k --dst /tmp/dtp-10k-out-nd --port 28603 \
+  --timeout 1200 --no-delay
+
+# 改造后
+./build-bench/tests/benchmarks/httpweb_transfer_benchmark \
+  --stream --src /tmp/dtp-10k --dst /tmp/dtp-10k-stream --port 28601 --timeout 1200
+
+# 大规模验收（NVMe 路径；1M 小文件与 10GB 单文件）
+./build-bench/tests/benchmarks/httpweb_transfer_benchmark \
+  --generate /var/tmp/dtp-1m --files 1000000 --size 4096 --dirs 64 --depth 2
+./build-bench/tests/benchmarks/httpweb_transfer_benchmark \
+  --stream --src /var/tmp/dtp-1m --dst /var/tmp/dtp-1m-out --port 28612 --timeout 1800
+./build-bench/tests/benchmarks/httpweb_transfer_benchmark \
+  --generate /var/tmp/dtp-10g --single 10G --pattern random
+./build-bench/tests/benchmarks/httpweb_transfer_benchmark \
+  --stream --src /var/tmp/dtp-10g --dst /var/tmp/dtp-10g-out --port 28614 --timeout 1800
+```
+
+> 每轮使用不同 `--port`：基准默认开启 `SO_REUSEPORT`，并行/连续的基准进程若共用端口，连接可能落到错误的 listener 上（表现为偶发 404/回退）。
+>
+> `--no-delay` 同时固定服务端与客户端的 TCP_NODELAY（基准通过 `DDE_COOPERATION_HTTPWEB_CLIENT_NODELAY=0/1` 注入，`FileClient` 生产默认值为 1）。不加该参数即复现“两端 Nagle 全开”的旧基线。
+
+### 6.5 优缺点对照（定性；定量随 6.3 补齐）
+
+| 维度 | legacy（现状） | DTP2 stream（目标） |
+|---|---|---|
+| 网络事务 | 每文件 1 次 GET、每目录 1 次 info | 每顶层选择项 1 条响应 |
+| 往返成本 | `N_f × RTT` + `N_f × 轮询` | 与文件数无关 |
+| 小文件延迟 | 受 Nagle/延迟 ACK 放大（实测 40 ms/文件） | 单条流，无需逐文件握手/等 ACK |
+| 压缩 | 无 | deflate/zstd 整流传压缩，小文件头开销被摊薄 |
+| 内存 | 目录 JSON 全量序列化 + HTTP 缓存 | 有界队列 + 发送缓冲高水位 |
+| 完整性 | 无 CRC，部分写直接落最终文件 | 每文件 CRC + END `streamCRC` + `.part` 原子改名 |
+| 恢复 | 无 checkpoint | 整文件粒度 checkpoint（v2 文件内偏移） |
+| 错误可见性 | `requestInfo` 失败 = 空文件、`downloadFile` 恒 false | 失败显式上报，不发 FINISH |
+| 实现复杂度 | 低 | 高：帧协议、双线程流水线、背压、断点、兼容矩阵 |
+| 风险 | 慢/僵死/静默丢数据 | 单连接失败影响整个顶层项；依赖 zstd 打包；需要新旧兼容验证 |
+| 观测手段 | 无请求计数 | 请求数/连接数/队列深度/压缩比 |
+
+结论（已有 1k/10k 实测支撑）：**收益主要来自“去掉逐文件事务”，其次才是压缩**；Nagle 是可单独拿走的 10× 级修复，但即使拿走，legacy 仍有约 4.6 ms/文件的协议与文件系统下限，DTP2 的批处理与校验能力仍然必要。代价是约 6 MB 常驻内存、更高的实现复杂度，以及单连接故障会覆盖整个顶层项——后者靠 END/CRC 显式失败和后续 checkpoint 重连兜底。
+
+### 6.6 TCP_NODELAY 的落地（D11，2026-11-03）
+
+**原理：Nagle 与延迟 ACK 的相互等待**
+
+```text
+不带 TCP_NODELAY（Nagle + 延迟 ACK）
+发送端                                    网络 / 接收端
+write(header ~200B) ──────────────────►  [P1] 到达，进入接收缓冲
+write(body 4KB)     ──┐
+                      │ Nagle：已有未确认的小包 P1，
+                      │ 后续小包先缓存，等 P1 的 ACK
+                      ▼
+                   [等 ACK]  ◄──────────  延迟 ACK 定时器（上限约 40 ms）
+                      │
+                      └─────────────────►  [P2] 发送
+每个文件固定多等约 40 ms
+
+带 TCP_NODELAY
+write(header) ────────────────────────►  [P1]
+write(body)   ────────────────────────►  [P2]（不再等 P1 的 ACK）
+ACK 仍可能延迟，但它不再阻塞后续数据
+```
+
+关键点：接收端的延迟 ACK 本来期待“搭车”确认后续数据；而发送端的 Nagle 又在等这个 ACK，双方互等，直到延迟 ACK 定时器（Linux 上约 40 ms）超时。`TCP_NODELAY` 只关闭 Nagle，不关闭延迟 ACK；它让第二个小包立即发出，从而打破互等。
+
+**为什么 DTP2 stream 几乎不受影响**：生产者把压缩输出攒成 256 KB 的块再写，不存在“响应头小包 + 首块 body 小包”的交替。实测 stream 在 nodelay=0/1 下为 0.057 s / 0.053 s（1k），差异在噪声内。开启它主要是保护 legacy 回退路径以及 HEAD/info 这类小请求。
+
+**优点**
+
+- legacy 每文件不再固定多等约 40 ms：1k 44.8 s → 4.4 s（10.1×），10k 448 s → 45.6 s。
+- 小请求（HEAD/info/JSON/错误响应）的延迟更稳定，不受对端 delayed ACK 定时器实现影响。
+- 对 stream 大块发送无副作用，属于“低风险、保留旧路径体验”的补丁。
+
+**缺点与代价**
+
+- 小包数量增加：每次小于 MSS 的 write 都会立即发包，协议头/软中断/带宽开销略增；在极差网络（高丢包、按包计费）上可能更差。本项目的写模式是少量大块，影响可忽略。
+- 不解决逐文件事务成本：即使 nodelay=1，legacy 仍有约 4.56 ms/文件的请求与文件系统开销。
+- 会掩盖“应用层应合并小写”的问题：若将来代码退化成多次小写，网络压力会直接暴露。
+- 改变历史基线：基准必须显式关闭才能复现旧数据；工具已支持（`start()` 后覆盖）。
+
+**落地**
+
+- `FileServer::start()` 调用 `SetupNoDelay(true)`；`FileClient` 创建 HTTP 客户端后调用 `SetupNoDelay(true)`。
+- 基准在 `start()` 之后覆盖：1k 复现 nodelay=0 为 44.84 s、nodelay=1 为 4.47 s；317 项测试通过。
+- 决策 D11 冻结。
 
 ## 7. 结论
 
 1. **问题的主因不是“没压缩”，而是“逐文件 HTTP 事务 + 固定轮询 + 同步 4 KB 发送”。** 只给每个文件加 gzip 不会解决慢和僵死。
 2. **推荐把协议改成单连接、自描述帧、整流传压缩的归档流。** 发送端边遍历边压边发，接收端边收边解压边写；有界队列和 `PauseReceive`/`ResumeReceive` 提供背压。
 3. **接口可以做到兼容。** `FileServer`/`FileClient` 公开方法不变，旧 `info`/`download` 端点保留；通过 JWT `dtp` claim 做能力协商，旧版本自动走 legacy。
-4. **zlib 和 zstd 的字节流不兼容，跨平台互通必须靠协议协商，不能靠“UOS 装了 zstd”。** 新版发布默认依赖并默认使用 zstd（优先静态链接），但 deflate/legacy 回退必须保留；协议协商是兼容性的前提。
+4. **zlib 和 zstd 的字节流不兼容，跨平台互通必须靠协议协商，不能靠“UOS 装了 zstd”。** 新版发布默认依赖并默认使用 zstd（Linux 共享、Windows/Android 静态），但 deflate/legacy 回退必须保留；协议协商是兼容性的前提。
 5. **最大的收益来自批处理协议本身，压缩是第二位的优化。** 按当前决策，新版默认依赖并默认使用 zstd；实现上仍先打通 deflate 回退路径，再启用 zstd 默认，以控制打包和兼容风险。
 6. **新的瓶颈会转移到磁盘 I/O。** 100k 小文件的创建/读取成本无法被协议消除，但不会再出现网络等文件、停止不了、静默丢数据的情况；需要用真实数据 benchmark 确认。

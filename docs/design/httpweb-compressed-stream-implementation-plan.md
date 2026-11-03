@@ -64,7 +64,7 @@ related_docs = [
 |---|---|---|
 | D1 | 采用单连接、自描述帧、整流传压缩的 DTP2 归档流 | 冻结 |
 | D2 | 能力协商：JWT `dtp` claim 声明版本和 codec 列表；接收端在 stream 请求中指定 codec | 冻结 |
-| D3 | deflate 永久作为协议基线；新版默认依赖并默认使用 zstd（优先静态链接） | 冻结 |
+| D3 | deflate 永久作为协议基线；新版默认依赖并默认使用 zstd（Linux 共享库、Windows/Android 静态） | 冻结 |
 | D4 | 旧端走 legacy；新服务端保留 `info`/`download` 端点 | 冻结 |
 | D5 | v1 使用 `Connection: close`；chunked 作为 v2 选项 | 冻结 |
 | D6 | v1 断点以整文件为粒度；v2 再做文件内偏移 | 冻结 |
@@ -72,6 +72,7 @@ related_docs = [
 | D8 | IO 线程只做收发；遍历/压缩/解压/写盘在生产者/消费者线程 | 冻结 |
 | D9 | 每文件 CRC32 trailer + END `streamCRC` + `.part` 原子改名 | 冻结 |
 | D10 | 通过环境变量/特性开关可强制 legacy 或指定 codec/level | 冻结 |
+| D11 | 生产默认开启 `TCP_NODELAY`（服务端与客户端）；基准可覆盖以复现旧基线 | 冻结 |
 
 **变更规则：** 任何 D1–D10 的修改都必须同时更新本计划、调研报告和交接协议，并在 Decision Log 记录原因；未记录的口头变更不生效。
 
@@ -208,13 +209,22 @@ related_docs = [
 
 **Phase 4 出口条件：** 断网后续传成功；停止 <1 秒；慢盘时内存有界；故障测试无 hang/无最终残缺文件。
 
+**Phase 4 实施结果（2026-11-03）：**
+
+- 背压落在 `SSLSession`/`SSLClient` 的 `PauseReceive`/`ResumeReceive`：接收队列 4MB 高水位暂停、1MB 低水位恢复；发送端 `pushStreamData` 2MB 高水位 + `waitStreamDrained`。
+- checkpoint 未单独建 `transfercheckpoint.*`，而是收敛在 `FileClient` 内部：`<temp>/dde-cooperation-checkpoints/<FNV64(token,name)>.ckpt`，内容为 `DTPCP1` + `from` + base64 根路径；临时文件+原子 rename；1s 节流、失败立即写。
+- 重放粒度为整文件：`from=N` 跳过前 N 个已确认帧；v1 不记录/校验源 size/mtime（与 D6 一致），源树变化时依赖续传冲突检测换新根重来。
+- 重试：最多 3 次，200/800ms 退避；网络/截断/超时重试，磁盘/路径/协议错误不重试；空闲 watchdog 默认 60s，可用 `DDE_COOPERATION_HTTPWEB_STREAM_IDLE_TIMEOUT` 覆盖。
+- `off>0` 仍未实现，返回 501；文件内偏移续传按 D6 留到 v2。
+- 故障测试已覆盖“写 100KB 后切断”和“挂起不转发触发 watchdog”两条路径；慢盘/磁盘满/停止专项仍待补（P4-5 部分完成）。
+
 ### 4.6 Phase 5：打包、兼容、验收
 
 目标：把 zstd 默认依赖和跨平台发布做实，完成 A/B 与兼容矩阵。
 
 | ID | 任务 | 关键文件 | 依赖 | 验收 | 人日 |
 |---|---|---|---|---|---|
-| P5-1 | zstd 静态链接/打包 | CMake、`vcpkg.json.in`、`clean_build.bat`、`prepare_dependencies.bat`、`debian/control`、Android CMake | P1-4 | Linux/Windows/Android 构建通过；新包默认 zstd；无系统 zstd 也能运行（静态） | 2 |
+| P5-1 | zstd 链接/打包 | CMake、`vcpkg.json.in`、`clean_build.bat`、`prepare_dependencies.bat`、`debian/control`、Android CMake | P1-4 | Linux/Windows/Android 构建通过；新包默认 zstd；Linux 动态依赖 `libzstd1`，Windows/Android 静态不带额外 DLL/SO | 2 |
 | P5-2 | 新旧兼容矩阵 | 测试脚本/人工 | P3-5/P5-1 | 旧↔旧、旧→新、新→旧、新↔新；zstd/deflate 组合全通过 | 1 |
 | P5-3 | 性能验收 | benchmark、实验记录 | P4-5 | 100k/1M/10GB 数据；记录时间/CPU/RSS/syscall/停顿；与基线对比 | 1 |
 | P5-4 | 灰度/开关/回滚 | `transferworker.cpp`、文档 | P3-5 | 环境变量强制 legacy；异常自动回退策略；日志可定位 | 0.5 |
@@ -222,13 +232,21 @@ related_docs = [
 
 **Phase 5 实现要点：**
 
-- Linux：`find_package(zstd CONFIG QUIET)` 或 `pkg_check_modules`；优先静态库；`debian/control` 加 `libzstd-dev`（Build-Depends）；动态链接时由 `${shlibs:Depends}` 带 `libzstd1`。
+- Linux：`find_package(zstd CONFIG QUIET)` 或 `pkg_check_modules`；**优先共享库**，规避静态 zstd 符号被系统 `libzstd.so.1` 插入导致的崩溃；`debian/control` 加 `libzstd-dev`（Build-Depends），运行时由 `${shlibs:Depends}` 带 `libzstd1`。
 - Windows：vcpkg 加 zstd，使用静态三元组；安装包不需要额外 DLL；如果动态，安装包必须带 DLL。
 - Android：按 ABI 链接 libzstd；如果 NDK 没有预编译包，使用项目统一的 third-party 预编译方式或 vendored 源码。
 - 新版本默认 zstd，但必须保留 deflate 回退；兼容矩阵是发布门槛。
 - 性能验收不要只看总时间；要区分网络时间、CPU 时间、磁盘时间，否则会把磁盘瓶颈误判为协议问题。
 
 **Phase 5 出口条件：** 三种平台构建通过；兼容矩阵全通过；100k 基准达到约定目标；文档/交接完成。
+
+**Phase 5 实施结果（2026-11-03）：**
+
+- P5-1：Debian `Build-Depends` 已加 `libzstd-dev`，运行时由 `${shlibs:Depends}` 带 `libzstd1`；`cmake/vcpkg.json.in` 已加 `zstd`，`clean_build.bat` 改用 `x86/x64-windows-static-md`，让 zlib/zstd 静态进二进制。Windows 尚未实机构建验证。Android 目前没有 zstd 预编译或 vendored 源码，构建会走 `HTTPWEB_HAVE_ZSTD=0` 的 deflate 回退；启用方式是通过 `CMAKE_PREFIX_PATH` 提供带 `zstd::libzstd_static` 的预编译前缀。
+- P5-2：未执行。需要旧版本二进制才能覆盖“旧↔旧、旧→新、新→旧、新↔新”和 zstd/deflate 组合；代码级已有 codec 协商与 stream/legacy 开关测试。
+- P5-3：完成。100k 2.58 s；1M×4 KB（4 GB，NVMe）58.5 s、CPU 33.1/71.5 s、RSS 56.5 MB、最长停顿 42 ms；10 GB 单文件 42.3 s、RSS 20.0 MB、最长停顿 765 ms；两份数据逐文件校验一致。
+- P5-4：`DDE_COOPERATION_HTTPWEB_STREAM=0` 可强制 legacy；服务端不返回 `X-DTP-Stream` 时自动回退；故障注入下的自动回退演练未做。
+- P5-5：调研报告 §6.3/§6.4、交接文档状态与会话日志已更新；发布说明和兼容矩阵待补。
 
 ## 5. 里程碑与排期
 
@@ -292,13 +310,14 @@ gantt
 
 ### 6.2 构建与运行命令
 
-当前开发机只有 Qt5（`/usr/lib/x86_64-linux-gnu/cmake/Qt5`），不要直接用强制 Qt6 的 `test-prj-running.sh` 作为日常门禁。
+当前开发机是 Qt6（`/usr/lib/qt6`）且**没有安装 GTest**，无法配置 `-DDOTEST=ON`；日常门禁先用 `DOTEST=OFF` 构建传输库，再用最小 gtest 兼容 shim 编译 `tests/logic` 下的流测试（见交接协议 9.2）。
 
 ```bash
-# 配置（Qt5 自动选择；Qt6 环境请额外加 CMAKE_PREFIX_PATH）
-cmake -S . -B build-dev \
-  -DCMAKE_BUILD_TYPE=Debug \
-  -DDOTEST=ON
+# 配置与构建（本机无 GTest；有 GTest 的环境再加 -DDOTEST=ON）
+cmake -S . -B build-core \
+  -DCMAKE_BUILD_TYPE=Debug
+
+cmake --build build-core -j"$(nproc)"
 
 # 编译目标测试（先全量编译一次，确保依赖生成）
 cmake --build build-dev -j"$(nproc)"
