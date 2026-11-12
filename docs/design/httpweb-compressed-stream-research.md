@@ -845,6 +845,26 @@ Phase 0 基线暴露出一个会污染 A/B 的因素：legacy 每文件约 40 ms
 - **残余成本**：即使拿走 Nagle，legacy 仍有 4.56 ms/文件的协议与文件系统下限；stream 把它降到 0.024 ms。
 - **代价**：RSS +6.4 MB、实现复杂度、单连接失败影响整个顶层项；这些在 6.5 中列出。
 
+### 6.3.1 跨机 A/B（测试机 ↔ 开发机，2026-11-12）
+
+为排除 loopback 对“每文件固定开销”的放大/掩盖，基准工具新增 `--serve` / `--connect` 远程模式：服务端只用 `FileServer` 托管目录，客户端在另一台机器用 `FileClient` 拉取，token 通过文件传递。两端都开 `TCP_NODELAY`（`--no-delay`），同一份源码构建，逐文件 CRC32 校验。
+
+环境：测试机 UOS 25 x86_64（`10.8.15.62`，16 核）做服务端；开发机（`10.8.12.63`）做客户端；两机经内网路由互通（此前手机到测试机的 ping RTT 约 24 ms）。数据集为默认 `text` 模式（4KB 文本文件、1GB 文本单文件），压缩率高于随机数据，1GB 用例的收益包含压缩。真实 ISO 用例每次传输前在测试机执行 `sync` + `drop_caches`，源文件位于 HDD；ISO 不在客户端，校验改用两端 SHA-256。
+
+| 用例 | legacy | stream | 墙钟加速 | CPU user+sys（legacy → stream） | RSS 峰值 | 最长停顿 | HTTP 请求（legacy → stream） | 校验 |
+|---|---|---|---|---|---|---|---|---|
+| 10 000 × 4 KB（40.96 MB） | 50.73 s | 0.281 s / 0.272 s（两次） | **约 180×** | 3.62 s → 0.36 s | 13.2 → 14.1 MB | 312 ms → 6–7 ms | 74 info + 10 000 download → 0 info + 1 download | ok |
+| 1 × 1 GB 文本单文件 | 9.24 s | 0.802 s | **约 11.5×** | 6.99 s → 0.91 s | 11.7 → 14.0 MB | 7 ms → 5 ms | 2 info + 1 download → 0 info + 1 download | ok |
+| 1 × 7.57 GiB 真实 ISO（不可压缩，HDD 源） | 75.40 s | 69.45 s | 约 1.09× | 53.83 s → 52.43 s | 11.8 → 16.2 MB | 240 ms → 68 ms | 1 info + 1 download → 0 info + 1 download | SHA-256 ok |
+
+**读数**
+
+1. 10k 小文件的收益不是 loopback 假象：跨机仍是约 180×，且请求数从 10 074 次降到 1 次 download；每文件周期从约 5 ms 降到 0.027 ms。
+2. 1GB 单文件的 11.5× 主要来自 zstd 对文本的压缩，以及不再走 1GB 原始字节的 legacy 下载；随机/已压缩数据的收益会收敛到网络带宽，不应把 11.5× 当成通用倍数。
+3. 客户端 RSS 保持在 15 MB 以内，最长停顿不超过 7 ms；流式流水线没有把整文件载入内存。
+4. 两次 stream 10k 运行相差 3%，与 loopback 的噪声水平一致。
+5. 真实 ISO（`8 128 419 840` 字节，SHA-256 `79ec1cde…510a7b`）在测试机 HDD 上、每次传输前清 page cache，stream 69.45 s、legacy 75.40 s，两端 SHA-256 完全一致。ISO 已压缩/不可压缩，DTP2 没有数量级收益，但也没有劣化；约 8% 的差异主要来自少一次 info 请求和发送/接收路径差异，单次运行下应视为同量级。RSS 增加约 4.4 MB（zstd 上下文/队列），最长停顿从 240 ms 降到 68 ms。
+
 ### 6.4 复现命令
 
 ```bash
@@ -875,6 +895,18 @@ cmake --build build-bench -j"$(nproc)" --target httpweb_transfer_benchmark
   --generate /var/tmp/dtp-10g --single 10G --pattern random
 ./build-bench/tests/benchmarks/httpweb_transfer_benchmark \
   --stream --src /var/tmp/dtp-10g --dst /var/tmp/dtp-10g-out --port 28614 --timeout 1800
+
+# 跨机 A/B：一台做服务端，另一台做客户端（token 用文件传递）
+# 服务端（例如测试机 10.8.15.62）：
+./build-bench/tests/benchmarks/httpweb_transfer_benchmark \
+  --serve --stream --src /tmp/dtp-10k --bind 0.0.0.0 --port 28710 \
+  --token-file /tmp/token-stream.txt --timeout 300 --no-delay
+# 客户端（例如开发机；先把 token 文件拷过来）：
+./build-bench/tests/benchmarks/httpweb_transfer_benchmark \
+  --connect 10.8.15.62 --port 28710 --stream \
+  --token-file /tmp/token-stream.txt --src /tmp/dtp-10k \
+  --dst /tmp/dtp-10k-remote --timeout 300 --no-delay
+# legacy 对照：服务端加 --serve --legacy，客户端加 --connect ... --legacy
 ```
 
 > 每轮使用不同 `--port`：基准默认开启 `SO_REUSEPORT`，并行/连续的基准进程若共用端口，连接可能落到错误的 listener 上（表现为偶发 404/回退）。

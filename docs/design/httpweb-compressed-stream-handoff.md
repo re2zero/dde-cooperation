@@ -425,8 +425,11 @@ bash ./gradlew :app:assembleDebug
 - 扫码：手机连到 `10.8.15.0/24`（`10.8.15.67`），扫描 PC 端“手机协同”二维码成功；手机侧 `files/.cooperation/SSL/Barrier.pem` 已生成（2664 字节，SHA-256 `3E:DE:99:CE:...:19:12`，与 PC 证书不同，确认是每设备证书）。
 - 会话/投屏：PC `10.8.15.62:51598` ↔ 手机 `10.8.15.67:43404` 保持 ESTAB；PC `10.8.15.62:51686` ↔ 手机 `5900` 建立 VNC 连接，日志显示 “VNC authentication succeeded”，投屏正常。
 - DTP2 流（同一构建的 loopback 基准）：默认 token（含 `dtp` claim）10k×4KB（40.96 MB）耗时 0.344 s、`http_info_requests=0`、`http_download_requests=1`、10000/10000 文件、CRC 校验 `verified=ok`、最长停顿 22 ms。旧形状 token（`DDE_COOPERATION_HTTPWEB_TOKEN_DTP=0`）自动回退 legacy，`http_info_requests=74`、`http_download_requests=10000`、同样校验通过（48.5 s），证明能力协商和回退都在真实构建上生效。
+- 跨机 A/B（测试机 `10.8.15.62` 做服务端，开发机 `10.8.12.63` 做客户端；两端 `TCP_NODELAY` 开启，逐文件 CRC 校验）：10k×4KB legacy 50.73 s → stream 0.281/0.272 s（约 180×），CPU 3.62 → 0.36 s，最长停顿 312 → 6–7 ms，HTTP 请求 74 info + 10000 download → 0 info + 1 download；1 GB 文本单文件 legacy 9.24 s → stream 0.802 s（约 11.5×），CPU 6.99 → 0.91 s，均校验通过。
+- 真实 ISO（`~/Downloads/uos-test.iso`，8 128 419 840 字节，测试机 HDD，传输前清 page cache）：legacy 75.40 s → stream 69.45 s（约 1.09×），CPU 53.83 → 52.43 s，RSS 11.8 → 16.2 MB，最长停顿 240 → 68 ms，HTTP 请求 1 info + 1 download → 0 info + 1 download；两端 SHA-256 均为 `79ec1cde…510a7b`。ISO 不可压缩，DTP2 无数量级收益但也无劣化，约 8% 差异应视为同量级。
+- 基准工具新增远程模式：`--serve` 在一端托管目录并写 token 文件，`--connect HOST` 在另一端用 token 拉取；旧的单进程 loopback 模式保持不变。
 - 权限：`adb shell pm grant` / `appops set` 仍被域管拒绝（shell 无 `GRANT_RUNTIME_PERMISSIONS`、`MANAGE_APP_OPS_MODES`）；CAMERA 已由用户手动授予。
-- 结论：扫码、TLS、会话、投屏与 DTP2 流/回退均在真实设备与真实构建上验证通过。仍未覆盖：两台真实 GUI 应用之间的文件传输、真正的旧版本二进制矩阵、Windows 实机。
+- 结论：扫码、TLS、会话、投屏与 DTP2 流/回退均在真实设备与真实构建上验证通过；跨机 A/B 进一步确认小文件收益不是 loopback 假象。仍未覆盖：两台真实 GUI 应用之间的文件传输、真正的旧版本二进制矩阵、Windows 实机。
 
 ### 2026-11-03 — Phase 5：打包与大规格验收
 
