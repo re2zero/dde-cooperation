@@ -56,6 +56,7 @@ struct StreamProducerStats {
     uint64_t frames {0};
     uint64_t skippedSpecial {0};
     uint64_t skippedUnsafe {0};
+    uint64_t skippedOutside {0};
     uint64_t cycles {0};
     uint64_t walkErrors {0};
     double elapsedSeconds {0};

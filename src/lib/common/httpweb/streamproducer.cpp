@@ -263,6 +263,7 @@ bool StreamProducer::run(const std::string &sourcePath, const std::string &displ
     counters->frames = writer.entryCount();
     counters->skippedSpecial = walkStats.skippedSpecial;
     counters->skippedUnsafe = walkStats.skippedUnsafe;
+    counters->skippedOutside = walkStats.skippedOutside;
     counters->cycles = walkStats.cycles;
     counters->walkErrors = walkStats.errors;
     counters->bytesSent = bytesSent;

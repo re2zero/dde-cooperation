@@ -35,13 +35,13 @@ related_docs = [
 | 项 | 状态 |
 |---|---|
 | 分支 | `v25-trans`（文档旧快照写的是 `v20-trans`，以实际 git 为准） |
-| 代码改动 | Phase 0–5 主体完成；Android APK 已真机安装、扫码并投屏成功 |
-| Git 状态 | 代码改动已整理为 6 个提交（未推送）；三份设计文档的本轮验证记录未提交 |
-| 设计状态 | 已评审，D1–D11 冻结 |
-| 实施状态 | Phase 0–5 完成（P5-1/P5-3/P5-4/P5-5）；P4-5 部分 |
+| 代码改动 | Phase 0–5 主体完成；Android APK 已真机安装、扫码并投屏成功；真实目录符号链接包含/环检测修复已完成（待提交） |
+| Git 状态 | 已提交 6 个代码/文档提交（未推送）；本轮 walker 包含策略、祖先链环检测、测试与三份文档改动未提交 |
+| 设计状态 | 已评审，D1–D12 冻结 |
+| 实施状态 | Phase 0–5 完成（P5-1/P5-3/P5-4/P5-5）；P4-5 部分；真实目录 `~/work` 全树验收完成 |
 | 下一任务 | Windows 实机验证；P5-2 旧二进制矩阵；P4-5 慢盘/磁盘满/停止专项；两台真实 GUI 应用之间的文件传输 |
 | 开发机 Qt | 实际为 Qt6（`/usr/lib/qt6`）；文档旧快照写的 Qt5 已过时 |
-| GTest | 已安装 1.12.1；`-DDOTEST=ON` 可用；当前 330 项逻辑测试全绿 |
+| GTest | 已安装 1.12.1；`-DDOTEST=ON` 可用；当前 333 项逻辑测试全绿 |
 | zlib / zstd | zlib 1.3.2、zstd 1.5.7，CMake config 可用，静态库可链接进共享库 |
 | 构建约束 | C++17；Qt5/Qt6；Linux/Windows/Android |
 | zstd 决策 | 新版默认依赖并默认使用；deflate 永久回退；协议协商 codec |
@@ -61,6 +61,7 @@ related_docs = [
 | D9 | 每文件 CRC32 trailer + END `streamCRC` + `.part` 原子改名 |
 | D10 | 环境变量/特性开关可强制 legacy、指定 codec/level |
 | D11 | 生产默认开启 `TCP_NODELAY`（服务端与客户端）；基准工具可显式覆盖以复现旧基线 |
+| D12 | 发送端只跟随解析后仍在所选根内的符号链接；越界/不可解析跳过并上报；环检测按当前路径祖先链，不用全局 inode 去重；v1 不保留链接本身 |
 
 完整理由见调研报告 4.4 和 4.7；变更规则见实施计划第 2、10 节。
 
@@ -189,7 +190,7 @@ TEST_BIN="$(find build-dev -type f -executable -name lib_logic_tests | head -1)"
 
 | ID | 任务 | 状态 | 备注 |
 |---|---|---|---|
-| P2-1 | `StreamWalker` 确定性遍历 | 完成 | 每层字节序排序；显式栈；`(dev,inode)` 环检测；特殊文件/不安全名/深度上限跳过并上报；13 项测试 |
+| P2-1 | `StreamWalker` 确定性遍历 | 完成 | 每层字节序排序；显式栈；根内符号链接跟随/越界跳过；祖先链 `(dev,inode)` 环检测；特殊文件/不安全名/深度上限跳过并上报；16 项测试 |
 | P2-2 | `StreamProducer` | 完成 | 前导→遍历→帧→压缩→sink；每文件 flush；取消/文件缩短/打开失败语义；事件回调；8 项测试 |
 | P2-3 | `serveStream` 端点 | 完成 | `GET stream/<b64>&token&codec&level&from&off`；无 Content-Length、`Connection: close`；from/off≠0 返回 501；新增 `SetOpenEndedBody()` |
 | P2-4 | 异步发送与背压 | 完成 | `SendResponseBodyAsync` + 2MB 高水位；END 后等待发送队列排空再 `Disconnect`；生产者线程由 FileServer 持有并在 stop() join |
@@ -407,12 +408,23 @@ bash ./gradlew :app:assembleDebug
 
 **发布前验证：**
 
-- `lib_logic_tests` 全绿（当前 330 项）。
+- `lib_logic_tests` 全绿（当前 333 项）。
 - `build-core` Release 构建通过。
 - 1k/10k/100k 基准逐文件校验一致；1M/10GB 大规模验收见调研报告 §6.3。
 - 新旧 token、旧客户端行为、服务端关闭 stream 三条兼容路径均有集成测试。
 
 ## 8. 会话日志
+
+### 2026-11-12 — 真实目录全树验证 + 符号链接包含/环检测修复
+
+- 真实工程目录 `youqu-upstream`（同机 loopback）：1 189 文件/406 目录/81.58 MB，stream 2.295 s、legacy 7.597 s（约 3.3×）；stream 0 info + 1 download、最长停顿 44 ms，legacy 407 info + 1 178 download、908 ms。非空文件 SHA-256 全一致；stream 保留 11 个空文件和 10 个空目录，legacy 全部丢失。
+- 发现 DTP2 跟随符号链接会读到所选根之外的文件。已在 `StreamWalker` 增加根内 containment：只跟随解析后仍在根内的链接；越界/不可解析计入 `skippedOutside` 并上报；`WalkStats`/`StreamProducerStats` 暴露该计数。
+- 整棵测试机 `~/work`（113 259 普通文件/13 641 目录/18.09 GB，1 819 个符号链接，其中 68 个越界或不可解析）跨机 stream：
+  - 第一轮 114 776 文件、20.762 GB、327.1 s、0 失败；清单对照发现 99 个源路径缺失。根因是全局 `(dev,inode)` visited 把 `cpp-12 -> gcc-12-base` 这类兄弟别名当成环，真实路径被跳过。
+  - 改为“当前路径祖先链”环检测后，第二轮 115 093 文件、20.772 GB、321.6 s、0 失败、RSS 20.7 MB、最长停顿 2.859 s；源清单 0 缺失、0 大小不符、0 目录缺失，1 834 条内部链接别名副本（额外 2.68 GB）。最大 3 个文件 SHA-256 一致。
+- 权限限制：帧携带 mode，但 v1 接收端未 `chmod`；真实目录落盘 mode 由 umask 决定（stream 664、legacy 644），只读/可执行位不保留。空文件/空目录只有 stream 保留。
+- 测试：新增 `SymlinkInsideRootIsFollowed`、`SymlinkOutsideRootIsSkipped`、`SymlinkToSiblingDirectoryKeepsBothPaths`；`StreamWalkerTest` 16 项，完整 `lib_logic_tests` 333 项全绿。
+- 结论：真实目录传输可行；`~/work` 全树在 5 分半内完成，越界读取已封堵，符号链接按“根内实体化、根外跳过”的 v1 策略处理。仍未做整棵 legacy 对照（预计 10 分钟以上）和两台真实 GUI 之间的传输。
 
 ### 2026-11-12 — Android 真机扫码投屏 + DTP2 流端到端验证
 
@@ -626,7 +638,7 @@ bash ./gradlew :app:assembleDebug
 7. **`offset > size` 会 `Content-Length` 下溢**；`std::stoll` 可能抛异常。stream 端点必须校验/捕获。
 8. **`HTTPFileClient::_canceled` 必须每请求重置**；`_callback` 弱指针和 `_status.path` 必须加锁/快照；`TransferWorker::_canceled` 改 atomic。
 9. **`webBind` 失败不能继续把 name 放进 token/RPC**；`requestInfo` 失败不能等价于空文件。
-10. **符号链接可能成环**：`FileSizeCounter` 和遍历都要 visited 集合。
+10. **符号链接可能成环，也可能越界**：遍历只跟随解析后仍在所选根内的链接；环检测用当前路径的祖先链，不要用全局 `(dev,inode)` 集合（会把兄弟别名误判为环并丢路径）。
 11. **不要依赖 `directory_iterator` 顺序做断点**：每层排序。
 12. **不要直接写最终文件名**：`.part` + CRC/大小校验 + rename。
 13. **失败不要发 `WEB_TRANS_FINISH`**：发 `WEB_IO_ERROR`/`WEB_DISCONNECTED`。
@@ -634,14 +646,14 @@ bash ./gradlew :app:assembleDebug
 
 ### 9.2 环境/测试坑
 
-- **本机实际是 Qt6**（`/usr/lib/qt6`），不是 Qt5；`-DDOTEST=ON` 会在 `find_package(GTest REQUIRED)` 处失败，因为本机没有 libgtest。
-- 无网络、无 root：不能现场安装 gtest，也无法 FetchContent；需要 GTest 的验证只能靠“最小 gtest 兼容 shim”编译真实测试源码，或换一台有 GTest 的机器。
-- 本机 cmake 配置必须 `-DDOTEST=OFF`（默认值）才能生成；先 `cmake --build build-core --target httpweb` 快速验证。
+- **本机为 Qt6**（`/usr/lib/qt6`），不是 Qt5；GTest 1.12.1 已安装，`-DDOTEST=ON` 可直接配置。若换到无 GTest/无网络环境，才需要兼容 shim 或换机器。
+- 逻辑测试二进制在 `build-dev/tests/logic/lib_logic_tests`；用 `cmake --build build-dev --target lib_logic_tests` 单独构建，避免被 daemon 的 gcov 增量链接问题阻塞。
 - 项目根 `CMakeLists.txt` 默认 `DOTEST=OFF`；有 GTest 的环境才显式 `-DDOTEST=ON`。
 - `tests/logic` 使用 GTest，`file(GLOB *_test.cpp)` 自动收录新增测试；新增文件无需改 CMake。
 - `lib_logic_tests` 链接 `httpweb`，而 `httpweb` 现在 PUBLIC 链接 `ZLIB::ZLIB` 和 zstd，测试目标会自动获得。
 - netutil 的 Catch2 通过 Gitee FetchContent 获取，网络不可用时不要阻塞；优先 `netutil_http_tests`。
 - 已知部分测试会挂起/失败（见 `test-prj-running.sh` 注释）；不要把它们当成新回归。
+- 真实目录远程验收不要只看 `result=ok`/CRC：客户端 `--src` 为空时 `verified=skipped`，必须在两端生成“路径+大小”清单做集合对照，并抽大文件 SHA-256；否则会漏掉“路径被别名吞掉但内容仍在”的问题。
 
 ### 9.3 禁令
 
@@ -650,7 +662,7 @@ bash ./gradlew :app:assembleDebug
 - 不在 IO 线程读盘、写盘、压缩、解压、sleep。
 - 不提交 `build*/`、生成文件、测试数据集。
 - 不记录 token/密钥/用户文件内容到日志。
-- 不未经用户确认改变 D1–D10。
+- 不未经用户确认改变 D1–D12。
 
 ## 10. 代码地图
 

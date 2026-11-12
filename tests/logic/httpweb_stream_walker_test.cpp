@@ -214,6 +214,54 @@ TEST_F(StreamWalkerTest, SymlinkLoopTerminates)
     EXPECT_EQ(std::adjacent_find(paths.begin(), paths.end()), paths.end());
 }
 
+TEST_F(StreamWalkerTest, SymlinkInsideRootIsFollowed)
+{
+    writeFile(root / "src" / "real.txt", "data");
+    std::error_code ec;
+    fs::create_symlink(root / "src" / "real.txt", root / "src" / "link.txt", ec);
+    ASSERT_FALSE(ec) << ec.message();
+
+    const Result result = run(root / "src", "src");
+
+    EXPECT_EQ(result.stats.skippedOutside, 0u);
+    EXPECT_EQ(result.stats.files, 2u);
+    const auto paths = pathsOf(result.entries);
+    EXPECT_NE(std::find(paths.begin(), paths.end(), "link.txt"), paths.end());
+}
+
+TEST_F(StreamWalkerTest, SymlinkToSiblingDirectoryKeepsBothPaths)
+{
+    writeFile(root / "src" / "real" / "data.txt", "payload");
+    std::error_code ec;
+    fs::create_directory_symlink(root / "src" / "real", root / "src" / "alias", ec);
+    ASSERT_FALSE(ec) << ec.message();
+
+    const Result result = run(root / "src", "src");
+
+    EXPECT_EQ(result.stats.cycles, 0u);
+    EXPECT_EQ(result.stats.files, 2u);
+    const auto paths = pathsOf(result.entries);
+    EXPECT_NE(std::find(paths.begin(), paths.end(), "real/data.txt"), paths.end());
+    EXPECT_NE(std::find(paths.begin(), paths.end(), "alias/data.txt"), paths.end());
+}
+
+TEST_F(StreamWalkerTest, SymlinkOutsideRootIsSkipped)
+{
+    writeFile(root / "outside.txt", "secret");
+    writeFile(root / "src" / "inside.txt", "ok");
+    std::error_code ec;
+    fs::create_symlink(root / "outside.txt", root / "src" / "link.txt", ec);
+    ASSERT_FALSE(ec) << ec.message();
+
+    const Result result = run(root / "src", "src");
+
+    EXPECT_EQ(result.stats.skippedOutside, 1u);
+    EXPECT_EQ(result.stats.files, 1u);
+    const auto paths = pathsOf(result.entries);
+    EXPECT_EQ(std::find(paths.begin(), paths.end(), "link.txt"), paths.end());
+    ASSERT_EQ(result.errors.size(), 1u);
+}
+
 TEST_F(StreamWalkerTest, SpecialFilesAreSkipped)
 {
     fs::create_directories(root / "src");

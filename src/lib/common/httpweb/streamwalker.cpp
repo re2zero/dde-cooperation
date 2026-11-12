@@ -6,7 +6,7 @@
 
 #include <algorithm>
 #include <filesystem>
-#include <set>
+#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
@@ -69,10 +69,53 @@ std::string joinRelative(const std::string &parent, const std::string &name)
     return parent + "/" + name;
 }
 
+// Resolves symlinks and checks that `target` stays under `root`. A link that
+// points outside the selection must not be followed: the receiver would get
+// files the user did not select.
+bool isWithinRoot(const fs::path &root, const fs::path &target, std::error_code *error)
+{
+    std::error_code ec;
+    const fs::path relative = fs::relative(target, root, ec);
+    if (ec) {
+        if (error)
+            *error = ec;
+        return false;
+    }
+    if (relative.is_absolute())
+        return false;
+    for (const auto &part : relative) {
+        if (part == "..")
+            return false;
+    }
+    return true;
+}
+
+// Directory identity chain for one traversal branch. A symlink is a cycle only
+// when its target is one of the directories above it; a sibling alias pointing
+// at another subtree is not a cycle and must still be walked so its path is
+// preserved on the receiving side.
+struct AncestorNode {
+    uint64_t device {0};
+    uint64_t inode {0};
+    std::shared_ptr<const AncestorNode> parent;
+};
+
+using AncestorChain = std::shared_ptr<const AncestorNode>;
+
+bool hasAncestor(const AncestorChain &chain, uint64_t device, uint64_t inode)
+{
+    for (AncestorChain node = chain; node; node = node->parent) {
+        if (node->device == device && node->inode == inode)
+            return true;
+    }
+    return false;
+}
+
 struct DirTask {
     std::string absolute;
     std::string relative;
     int depth {0};
+    AncestorChain ancestors;
 };
 
 } // namespace
@@ -146,7 +189,6 @@ bool StreamWalker::walk(const std::string &rootPath, const std::string &displayN
         return false;
     }
 
-    std::set<std::pair<uint64_t, uint64_t>> visited;
     std::vector<DirTask> stack;
 
     // The root directory frame is emitted here; its children are relative.
@@ -160,7 +202,7 @@ bool StreamWalker::walk(const std::string &rootPath, const std::string &displayN
             return false;
     }
 
-    stack.push_back(DirTask {rootPath, std::string(), 0});
+    stack.push_back(DirTask {rootPath, std::string(), 0, nullptr});
 
     while (!stack.empty()) {
         DirTask task = std::move(stack.back());
@@ -173,15 +215,18 @@ bool StreamWalker::walk(const std::string &rootPath, const std::string &displayN
         }
 
         // Symlink cycles are cut through the target identity, not the path:
-        // a loop produces a different path string on every hop.
+        // a loop produces a different path string on every hop. Only ancestors
+        // count: a link to a sibling directory is a legitimate second path.
         EntryMeta dirMeta;
+        AncestorChain ancestors = task.ancestors;
         if (entryMeta(task.absolute, &dirMeta) && dirMeta.hasIdentity) {
-            const auto identity = std::make_pair(dirMeta.device, dirMeta.inode);
-            if (!visited.insert(identity).second) {
+            if (hasAncestor(ancestors, dirMeta.device, dirMeta.inode)) {
                 counters->cycles++;
                 report(task.absolute, "symlink loop detected");
                 continue;
             }
+            ancestors = std::make_shared<const AncestorNode>(
+                    AncestorNode {dirMeta.device, dirMeta.inode, ancestors});
         }
 
         std::vector<DirEntry> entries;
@@ -191,8 +236,27 @@ bool StreamWalker::walk(const std::string &rootPath, const std::string &displayN
             continue;
         }
         for (const auto &item : it) {
+            std::error_code linkEc;
+            const fs::file_status linkStatus = item.symlink_status(linkEc);
+            if (linkEc) {
+                report(item.path().u8string(), "cannot stat entry: " + linkEc.message());
+                continue;
+            }
+
+            const bool isLink = fs::is_symlink(linkStatus);
+            if (isLink && _options.followSymlinks) {
+                std::error_code rootEc;
+                if (!isWithinRoot(root, item.path(), &rootEc)) {
+                    counters->skippedOutside++;
+                    report(item.path().u8string(),
+                           rootEc ? "cannot resolve symlink target: " + rootEc.message()
+                                  : "symlink target is outside the selected directory");
+                    continue;
+                }
+            }
+
             const fs::file_status status =
-                    _options.followSymlinks ? item.status(ec) : item.symlink_status(ec);
+                    _options.followSymlinks ? item.status(ec) : linkStatus;
             if (ec) {
                 report(item.path().u8string(), "cannot stat entry: " + ec.message());
                 ec.clear();
@@ -249,7 +313,8 @@ bool StreamWalker::walk(const std::string &rootPath, const std::string &displayN
                 counters->directories++;
                 if (!onEntry(wire))
                     return false;
-                subdirectories.push_back(DirTask {entry.absolute, relative, task.depth + 1});
+                subdirectories.push_back(
+                        DirTask {entry.absolute, relative, task.depth + 1, ancestors});
                 continue;
             }
 
