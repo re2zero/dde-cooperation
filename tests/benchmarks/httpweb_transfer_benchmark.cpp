@@ -35,6 +35,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <chrono>
 #include <cmath>
 #include <condition_variable>
@@ -48,6 +49,7 @@
 #include <set>
 #include <mutex>
 #include <random>
+#include <sstream>
 #include <string>
 #include <thread>
 #include <vector>
@@ -71,10 +73,18 @@ struct Options {
     bool legacy {false};
     bool stream {false};
     bool verify {true};
+    bool serve {false};
 
     std::string dir;
     std::string src;
     std::string dst;
+
+    // Remote client/server mode: one process hosts the web, the other pulls it
+    // over the network. The in-process mode remains the default.
+    std::string connectHost;
+    std::string bindAddress {"0.0.0.0"};
+    std::string token;
+    std::string tokenFile;
 
     uint64_t files {1000};
     uint64_t fileSize {4096};
@@ -98,7 +108,12 @@ void usage()
             "                 [--pattern text|random|zero] [--single SIZE] [--seed N]\n"
             "  --legacy|--stream --src DIR --dst DIR [--port N] [--timeout SEC]\n"
             "                 [--repeat N] [--no-verify] [--no-delay]\n"
+            "  --serve --legacy|--stream --src DIR [--bind ADDR] [--port N]\n"
+            "                 [--token-file PATH] [--timeout SEC] [--no-delay]\n"
+            "  --connect HOST --legacy|--stream --dst DIR (--token TOKEN|--token-file PATH)\n"
+            "                 [--src DIR] [--port N] [--timeout SEC] [--no-delay]\n"
             "\n"
+            "Remote mode: start --serve on one machine, then run --connect on the other.\n"
             "SIZE accepts K/M/G suffixes (e.g. 10G).\n";
 }
 
@@ -140,6 +155,16 @@ bool parseArgs(int argc, char **argv, Options *options)
             options->legacy = true;
         else if (arg == "--stream")
             options->stream = true;
+        else if (arg == "--serve")
+            options->serve = true;
+        else if (arg == "--connect")
+            options->connectHost = next("--connect");
+        else if (arg == "--bind")
+            options->bindAddress = next("--bind");
+        else if (arg == "--token")
+            options->token = next("--token");
+        else if (arg == "--token-file")
+            options->tokenFile = next("--token-file");
         else if (arg == "--no-verify")
             options->verify = false;
         else if (arg == "--no-delay")
@@ -186,8 +211,36 @@ bool parseArgs(int argc, char **argv, Options *options)
         std::cerr << "--legacy and --stream are mutually exclusive\n";
         return false;
     }
-    if ((options->legacy || options->stream)
-            && (options->src.empty() || options->dst.empty())) {
+
+    const bool transferMode = options->legacy || options->stream;
+    const bool remoteClient = !options->connectHost.empty();
+    if (options->serve && remoteClient) {
+        std::cerr << "--serve and --connect are mutually exclusive\n";
+        return false;
+    }
+    if (options->serve) {
+        if (!transferMode) {
+            std::cerr << "--serve needs --legacy or --stream\n";
+            return false;
+        }
+        if (options->src.empty()) {
+            std::cerr << "--serve needs --src\n";
+            return false;
+        }
+    } else if (remoteClient) {
+        if (!transferMode) {
+            std::cerr << "--connect needs --legacy or --stream\n";
+            return false;
+        }
+        if (options->dst.empty()) {
+            std::cerr << "--connect needs --dst\n";
+            return false;
+        }
+        if (options->token.empty() && options->tokenFile.empty()) {
+            std::cerr << "--connect needs --token or --token-file\n";
+            return false;
+        }
+    } else if (transferMode && (options->src.empty() || options->dst.empty())) {
         std::cerr << "--legacy/--stream need --src and --dst\n";
         return false;
     }
@@ -694,6 +747,106 @@ struct RunMetrics {
     std::string error;
 };
 
+void setEnvValue(const char *name, const char *value)
+{
+#ifndef _WIN32
+    if (value)
+        setenv(name, value, 1);
+    else
+        unsetenv(name);
+#else
+    _putenv_s(name, value ? value : "");
+#endif
+}
+
+bool writeTextFile(const std::string &path, const std::string &text)
+{
+    std::ofstream out(path, std::ios::binary | std::ios::trunc);
+    if (!out)
+        return false;
+    out << text;
+    return static_cast<bool>(out);
+}
+
+std::string readTextFile(const std::string &path)
+{
+    std::ifstream in(path, std::ios::binary);
+    std::ostringstream buffer;
+    buffer << in.rdbuf();
+    return buffer.str();
+}
+
+std::string trimCopy(std::string text)
+{
+    auto notSpace = [](unsigned char ch) { return !std::isspace(ch); };
+    text.erase(text.begin(), std::find_if(text.begin(), text.end(), notSpace));
+    text.erase(std::find_if(text.rbegin(), text.rend(), notSpace).base(), text.end());
+    return text;
+}
+
+void printMetrics(const Options &options, int run, const std::string &runDst,
+                  const std::string &webName, const RunMetrics &metrics, int *exitCode)
+{
+    std::cout << "mode=" << (options.stream ? "stream" : "legacy") << "\n"
+              << "run=" << run << "\n"
+              << "no_delay=" << (options.noDelay ? 1 : 0) << "\n"
+              << "src=" << options.src << "\n"
+              << "dst=" << runDst << "\n"
+              << "elapsed_s=" << metrics.elapsed << "\n"
+              << "cpu_user_s=" << metrics.cpu.user << "\n"
+              << "cpu_sys_s=" << metrics.cpu.system << "\n"
+              << "rss_peak_kb=" << metrics.rssKb << "\n"
+              << "progress_bytes=" << metrics.progressBytes << "\n"
+              << "file_begin=" << metrics.fileBegin << "\n"
+              << "file_end=" << metrics.fileEnd << "\n"
+              << "index_begin=" << metrics.indexBegin << "\n"
+              << "failures=" << metrics.failures << "\n"
+              << "max_stall_ms=" << metrics.maxStallMs << "\n"
+              << "http_header_requests=" << metrics.headerRequests << "\n"
+              << "http_info_requests=" << metrics.infoRequests << "\n"
+              << "http_download_requests=" << metrics.downloadRequests << "\n"
+              << "http_connections=" << metrics.connections << "\n"
+              << "file_ms_min=" << metrics.fileDuration.minMs << "\n"
+              << "file_ms_avg=" << metrics.fileDuration.avgMs << "\n"
+              << "file_ms_max=" << metrics.fileDuration.maxMs << "\n"
+              << "file_cycle_ms_avg=" << metrics.fileCycle.avgMs << "\n"
+              << "file_cycle_ms_max=" << metrics.fileCycle.maxMs << "\n";
+
+    if (!metrics.error.empty())
+        std::cout << "error=" << metrics.error << "\n";
+
+    if (options.verify && !options.src.empty() && metrics.error.empty()) {
+        // FileClient saves the selection under <saveDir>/<root name>.
+        const fs::path targetRoot = fs::path(runDst) / fs::path(webName);
+        const VerifyResult verify = verifyTrees(options.src, targetRoot);
+        std::cout << "files_src=" << verify.sourceFiles << "\n"
+                  << "bytes_src=" << verify.sourceBytes << "\n"
+                  << "files_dst=" << verify.targetFiles << "\n"
+                  << "bytes_dst=" << verify.targetBytes << "\n"
+                  << "missing=" << verify.missing << "\n"
+                  << "extra=" << verify.extra << "\n"
+                  << "mismatched=" << verify.mismatched << "\n"
+                  << "verified=" << (verify.ok ? "ok" : "mismatch") << "\n";
+        if (!verify.ok && !verify.firstProblem.empty())
+            std::cout << "verify_problem=" << verify.firstProblem << "\n";
+        if (!verify.ok)
+            *exitCode = 3;
+    } else {
+        std::cout << "verified=skipped\n";
+    }
+
+    if (metrics.timedOut) {
+        std::cout << "result=timeout\n";
+        *exitCode = 2;
+    } else if (!metrics.ok) {
+        std::cout << "result=error\n";
+        *exitCode = 1;
+    } else {
+        std::cout << "result=ok\n";
+    }
+    std::cout.flush();
+}
+
 RunMetrics runLegacyOnce(const Options &options, const std::string &runDst, int port)
 {
     RunMetrics metrics;
@@ -870,65 +1023,197 @@ int runLegacy(const Options &options)
                                     : (fs::path(options.dst) / ("run" + std::to_string(run))).string();
 
         const RunMetrics metrics = runLegacyOnce(options, runDst, options.port + run);
+        const std::string webName = fs::path(stripTrailingSeparators(options.src)).filename().string();
+        printMetrics(options, run, runDst, webName, metrics, &exitCode);
+    }
+    return exitCode;
+}
 
-        std::cout << "mode=" << (options.stream ? "stream" : "legacy") << "\n"
-                  << "run=" << run << "\n"
-                  << "no_delay=" << (options.noDelay ? 1 : 0) << "\n"
-                  << "src=" << options.src << "\n"
-                  << "dst=" << runDst << "\n"
-                  << "elapsed_s=" << metrics.elapsed << "\n"
-                  << "cpu_user_s=" << metrics.cpu.user << "\n"
-                  << "cpu_sys_s=" << metrics.cpu.system << "\n"
-                  << "rss_peak_kb=" << metrics.rssKb << "\n"
-                  << "progress_bytes=" << metrics.progressBytes << "\n"
-                  << "file_begin=" << metrics.fileBegin << "\n"
-                  << "file_end=" << metrics.fileEnd << "\n"
-                  << "index_begin=" << metrics.indexBegin << "\n"
-                  << "failures=" << metrics.failures << "\n"
-                  << "max_stall_ms=" << metrics.maxStallMs << "\n"
-                  << "http_header_requests=" << metrics.headerRequests << "\n"
-                  << "http_info_requests=" << metrics.infoRequests << "\n"
-                  << "http_download_requests=" << metrics.downloadRequests << "\n"
-                  << "http_connections=" << metrics.connections << "\n"
-                  << "file_ms_min=" << metrics.fileDuration.minMs << "\n"
-                  << "file_ms_avg=" << metrics.fileDuration.avgMs << "\n"
-                  << "file_ms_max=" << metrics.fileDuration.maxMs << "\n"
-                  << "file_cycle_ms_avg=" << metrics.fileCycle.avgMs << "\n"
-                  << "file_cycle_ms_max=" << metrics.fileCycle.maxMs << "\n";
+int runServer(const Options &options)
+{
+    // A legacy server must behave like the old release: no stream endpoint and
+    // no dtp claim. A stream server keeps the production defaults.
+    setEnvValue("DDE_COOPERATION_HTTPWEB_SERVER_STREAM", options.stream ? nullptr : "0");
+    setEnvValue("DDE_COOPERATION_HTTPWEB_TOKEN_DTP", options.stream ? nullptr : "0");
 
-        if (!metrics.error.empty())
-            std::cout << "error=" << metrics.error << "\n";
+    const fs::path source = fs::path(stripTrailingSeparators(options.src));
+    std::error_code ec;
+    if (!fs::exists(source, ec)) {
+        std::cout << "error=source does not exist: " << options.src << "\n"
+                  << "result=error\n";
+        return 1;
+    }
+    const std::string webName = source.filename().string();
 
-        if (options.verify && metrics.error.empty()) {
-            // FileClient saves the selection under <saveDir>/<root name>.
-            const fs::path targetRoot = fs::path(runDst) / fs::path(options.src).filename();
-            const VerifyResult verify = verifyTrees(options.src, targetRoot);
-            std::cout << "files_src=" << verify.sourceFiles << "\n"
-                      << "bytes_src=" << verify.sourceBytes << "\n"
-                      << "files_dst=" << verify.targetFiles << "\n"
-                      << "bytes_dst=" << verify.targetBytes << "\n"
-                      << "missing=" << verify.missing << "\n"
-                      << "extra=" << verify.extra << "\n"
-                      << "mismatched=" << verify.mismatched << "\n"
-                      << "verified=" << (verify.ok ? "ok" : "mismatch") << "\n";
-            if (!verify.ok && !verify.firstProblem.empty())
-                std::cout << "verify_problem=" << verify.firstProblem << "\n";
-            if (!verify.ok)
-                exitCode = 3;
+    WebBinder::GetInstance().clear();
+    TokenCache::GetInstance().clearTokens();
+
+    const std::string profile =
+            (fs::temp_directory_path() / "dde-cooperation-remote-bench-certs").string();
+    auto service = std::make_shared<NetUtil::Asio::Service>();
+    service->Start();
+    auto context = makeServerContext(profile);
+    auto server = std::make_shared<FileServer>(service, context, options.bindAddress, options.port);
+    if (!server->start()) {
+        std::cout << "error=cannot start server on " << options.bindAddress << ":"
+                  << options.port << "\n"
+                  << "result=error\n";
+        service->Stop();
+        return 1;
+    }
+
+    server->SetupNoDelay(options.noDelay);
+    if (server->webBind(webName, source.string()) != 0) {
+        std::cout << "error=webBind failed for " << webName << "\n"
+                  << "result=error\n";
+        server->stop();
+        service->Stop();
+        return 1;
+    }
+
+    picojson::array names;
+    names.push_back(picojson::value(webName));
+    const std::string token = server->genToken(picojson::value(names).serialize());
+    if (!options.tokenFile.empty() && !writeTextFile(options.tokenFile, token)) {
+        std::cout << "error=cannot write token file: " << options.tokenFile << "\n"
+                  << "result=error\n";
+        server->stop();
+        service->Stop();
+        return 1;
+    }
+
+    std::cout << "mode=" << (options.stream ? "stream" : "legacy") << "\n"
+              << "role=server\n"
+              << "bind=" << options.bindAddress << "\n"
+              << "port=" << options.port << "\n"
+              << "web=" << webName << "\n"
+              << "token=" << token << "\n";
+    if (!options.tokenFile.empty())
+        std::cout << "token_file=" << options.tokenFile << "\n";
+    std::cout << "ready=1\n";
+    std::cout.flush();
+
+    const auto deadline = Clock::now() + std::chrono::seconds(std::max(1, options.timeoutSeconds));
+    while (Clock::now() < deadline)
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
+    server->stop();
+    service->Stop();
+    std::cout << "result=ok\n";
+    return 0;
+}
+
+int runClient(const Options &options)
+{
+    setEnvValue("DDE_COOPERATION_HTTPWEB_STREAM", options.stream ? "1" : "0");
+    setEnvValue("DDE_COOPERATION_HTTPWEB_CLIENT_NODELAY", options.noDelay ? "1" : "0");
+
+    std::string token = options.token;
+    if (token.empty())
+        token = readTextFile(options.tokenFile);
+    token = trimCopy(token);
+    if (token.empty()) {
+        std::cout << "error=empty token\n"
+                  << "result=error\n";
+        return 1;
+    }
+
+    int exitCode = 0;
+    for (int run = 0; run < options.repeat; ++run) {
+        const std::string runDst =
+                options.repeat == 1 ? options.dst
+                                    : (fs::path(options.dst) / ("run" + std::to_string(run))).string();
+
+        std::error_code ec;
+        if (fs::exists(runDst, ec)) {
+            if (!fs::is_directory(runDst, ec) || !fs::is_empty(runDst, ec)) {
+                std::cout << "error=destination is not empty: " << runDst << "\n"
+                          << "result=error\n";
+                return 1;
+            }
         } else {
-            std::cout << "verified=skipped\n";
+            fs::create_directories(runDst, ec);
+            if (ec) {
+                std::cout << "error=cannot create " << runDst << ": " << ec.message() << "\n"
+                          << "result=error\n";
+                return 1;
+            }
         }
 
-        if (metrics.timedOut) {
-            std::cout << "result=timeout\n";
-            exitCode = 2;
-        } else if (!metrics.ok) {
-            std::cout << "result=error\n";
-            exitCode = 1;
-        } else {
-            std::cout << "result=ok\n";
+        const std::string profile =
+                (fs::temp_directory_path() / "dde-cooperation-remote-bench-certs").string();
+        auto service = std::make_shared<NetUtil::Asio::Service>();
+        service->Start();
+        auto context = makeClientContext(profile);
+        auto collector = std::make_shared<Collector>();
+        collector->lastEvent = Clock::now();
+
+        const CpuTimes cpuBefore = cpuTimes();
+        const auto started = Clock::now();
+        std::string webName;
+        RunMetrics metrics;
+
+        {
+            FileClient client(service, context, options.connectHost, options.port);
+            client.setCallback(collector);
+            client.setConfig(token, runDst);
+
+            std::vector<std::string> webs;
+            try {
+                webs = client.parseWeb(token);
+            } catch (const std::exception &e) {
+                metrics.error = std::string("parseWeb failed: ") + e.what();
+            }
+            if (metrics.error.empty() && webs.empty())
+                metrics.error = "token carries no web names";
+
+            if (metrics.error.empty()) {
+                webName = webs.front();
+                client.startFileDownload(webs);
+
+                bool timedOut = false;
+                collector->waitFor(options.timeoutSeconds, &timedOut);
+                if (timedOut) {
+                    metrics.timedOut = true;
+                    client.stop();
+                }
+                for (int i = 0; i < 3000 && !collector->finished && !collector->aborted; ++i)
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+
+            const FileClient::WebRequestCounters counters = client.requestCounters();
+            metrics.infoRequests = counters.infoRequests;
+            metrics.downloadRequests = counters.downloadRequests;
+            metrics.headerRequests = counters.headerRequests;
+            metrics.connections = counters.connections;
+
+            client.setCallback(nullptr);
         }
-        std::cout.flush();
+
+        metrics.elapsed = std::chrono::duration<double>(Clock::now() - started).count();
+        const CpuTimes cpuAfter = cpuTimes();
+        metrics.cpu.user = cpuAfter.user - cpuBefore.user;
+        metrics.cpu.system = cpuAfter.system - cpuBefore.system;
+        metrics.rssKb = peakRssKb();
+        metrics.progressBytes = collector->progressBytes.load();
+        metrics.fileBegin = collector->fileBegin.load();
+        metrics.fileEnd = collector->fileEnd.load();
+        metrics.indexBegin = collector->indexBegin.load();
+        metrics.failures = collector->failures.load();
+        metrics.maxStallMs = collector->maxStallUs.load() / 1000;
+        {
+            std::lock_guard<std::mutex> lock(collector->mutex);
+            if (metrics.error.empty())
+                metrics.error = collector->lastError;
+            metrics.ok = collector->finished && !collector->aborted && metrics.error.empty();
+            metrics.fileDuration = summarize(collector->fileDurationsMs);
+            metrics.fileCycle = summarize(collector->fileCyclesMs);
+        }
+
+        service->Stop();
+        printMetrics(options, run, runDst, webName, metrics, &exitCode);
+        if (exitCode != 0)
+            break;
     }
     return exitCode;
 }
@@ -957,6 +1242,10 @@ int main(int argc, char **argv)
     try {
         if (options.generate)
             return generateDataset(options);
+        if (options.serve)
+            return runServer(options);
+        if (!options.connectHost.empty())
+            return runClient(options);
         return runLegacy(options);
     } catch (const std::exception &e) {
         std::cerr << "benchmark failed: " << e.what() << "\n";
