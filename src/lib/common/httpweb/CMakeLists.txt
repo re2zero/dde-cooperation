@@ -39,7 +39,9 @@ else()
     endif()
 endif()
 
-if(NOT HTTPWEB_ZSTD_TARGET)
+# Never let host pkg-config leak a host libzstd into a Windows/Android
+# cross-build; those platforms must provide an imported zstd target.
+if(NOT HTTPWEB_ZSTD_TARGET AND NOT WIN32 AND NOT ANDROID)
     find_package(PkgConfig QUIET)
     if(PkgConfig_FOUND)
         pkg_check_modules(ZSTD QUIET IMPORTED_TARGET libzstd)
@@ -62,6 +64,10 @@ if(HTTPWEB_ZSTD_TARGET)
     message(STATUS "httpweb: zstd enabled (${HTTPWEB_ZSTD_TARGET})")
 else()
     message(STATUS "httpweb: zstd not found, deflate/none only")
+    if(ANDROID)
+        message(STATUS "httpweb: Android needs a prebuilt zstd (expects zstd::libzstd_static); "
+                       "pass its prefix via CMAKE_PREFIX_PATH to enable zstd")
+    endif()
 endif()
 
 if(FPIC)
