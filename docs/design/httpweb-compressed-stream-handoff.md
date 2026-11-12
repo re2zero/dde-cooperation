@@ -30,18 +30,18 @@ related_docs = [
 - 任务状态冲突时，以本文状态表 + `git status` 为准；不要假设上一个会话完成了未记录的工作。
 - 决策冲突时，以第 3 节 Decision Log 为准；修改决策必须经用户确认并更新三份文档。
 
-## 2. 当前快照（2026-11-02，实施会话后）
+## 2. 当前快照（2026-11-12，真机验证后）
 
 | 项 | 状态 |
 |---|---|
 | 分支 | `v25-trans`（文档旧快照写的是 `v20-trans`，以实际 git 为准） |
-| 代码改动 | Phase 0–3 主体；接收端已接入 `FileClient` 并可回退 legacy |
-| Git 状态 | 未提交；新增源码/测试/CMake 与 `docs/design/` 均未跟踪或已修改 |
-| 设计状态 | 已评审，D1–D10 冻结（未变更） |
-| 实施状态 | Phase 0–4 完成（P4-5 部分）；Phase 5 进行中（打包、1M/10GB 验收完成） |
-| 下一任务 | P5-1 Android zstd 来源/Windows 构建验证；P5-2 兼容矩阵；P5-4/P5-5 收尾 |
+| 代码改动 | Phase 0–5 主体完成；Android APK 已真机安装、扫码并投屏成功 |
+| Git 状态 | 代码改动已整理为 6 个提交（未推送）；三份设计文档的本轮验证记录未提交 |
+| 设计状态 | 已评审，D1–D11 冻结 |
+| 实施状态 | Phase 0–5 完成（P5-1/P5-3/P5-4/P5-5）；P4-5 部分 |
+| 下一任务 | Windows 实机验证；P5-2 旧二进制矩阵；P4-5 慢盘/磁盘满/停止专项；两台真实 GUI 应用之间的文件传输 |
 | 开发机 Qt | 实际为 Qt6（`/usr/lib/qt6`）；文档旧快照写的 Qt5 已过时 |
-| GTest | 已安装 1.12.1；`-DDOTEST=ON` 可用；当前 317 项逻辑测试全绿 |
+| GTest | 已安装 1.12.1；`-DDOTEST=ON` 可用；当前 330 项逻辑测试全绿 |
 | zlib / zstd | zlib 1.3.2、zstd 1.5.7，CMake config 可用，静态库可链接进共享库 |
 | 构建约束 | C++17；Qt5/Qt6；Linux/Windows/Android |
 | zstd 决策 | 新版默认依赖并默认使用；deflate 永久回退；协议协商 codec |
@@ -161,7 +161,7 @@ TEST_BIN="$(find build-dev -type f -executable -name lib_logic_tests | head -1)"
 | Phase 2 发送端 | 完成 | 100% | — |
 | Phase 3 接收端 | 完成 | 100% | — |
 | Phase 4 背压/断点/故障 | 进行中 | 80% | P4-5 |
-| Phase 5 打包/兼容/验收 | 进行中 | 40% | P5-2 |
+| Phase 5 打包/兼容/验收 | 进行中 | 70% | P5-1/P5-2 |
 
 **Phase 0 任务级状态：**
 
@@ -200,7 +200,7 @@ TEST_BIN="$(find build-dev -type f -executable -name lib_logic_tests | head -1)"
 
 | ID | 任务 | 状态 | 备注 |
 |---|---|---|---|
-| P3-1 | token 能力协商 | 部分 | 当前由请求方显式 `codec=` 并校验响应头；JWT `dtp` claim 留到 Phase 5 与旧端兼容一起做 |
+| P3-1 | token 能力协商 | 完成 | `genToken` 写入 `dtp` claim（`{"v":2,"codecs":[zstd,deflate]}`）；`getDtpFromToken` 解析；无 claim 直接 legacy；`DDE_COOPERATION_HTTPWEB_TOKEN_DTP=0` 可回滚；服务端仍逐请求验签 |
 | P3-2 | `StreamConsumer` | 完成 | 解压/解析/落盘一体；16KB 解压切片限内存；10 项测试 |
 | P3-3 | 路径映射/冲突/安全 | 完成 | 根目录只建一次并按 web 名命名；冲突 `(1)`；`..`/绝对路径拒绝；跨 symlink 拒绝；归档内重复名不覆盖 |
 | P3-4 | `.part`/CRC/rename | 完成 | 边写边由解析器校验每帧 CRC；成功后 rename；失败/取消删除 `.part` |
@@ -222,11 +222,11 @@ TEST_BIN="$(find build-dev -type f -executable -name lib_logic_tests | head -1)"
 
 | ID | 任务 | 状态 | 备注 |
 |---|---|---|---|
-| P5-1 | zstd 链接/打包 | 部分 | Linux：`libzstd-dev` 加入 Build-Depends，共享 `libzstd` 由 `${shlibs:Depends}` 带 `libzstd1`；Windows：vcpkg manifest 加 `zstd`，三元组改为 `*-windows-static-md`（未在 Windows 实机验证）；Android：仍无 zstd 预编译/vendored 源码，当前只能 deflate |
-| P5-2 | 新旧兼容矩阵 | 未开始 | 需要旧版本二进制；当前仅覆盖代码级 codec 协商与 stream/legacy 开关 |
+| P5-1 | zstd 链接/打包 | 部分 | Linux：`libzstd-dev` 加入 Build-Depends 与 dev 包依赖，运行时由 `${shlibs:Depends}` 带 `libzstd1`；Windows：vcpkg manifest 加 `zstd`，三元组改为 `*-windows-static-md`（未实机验证）；Android：NDK 27 交叉编译 zstd 1.5.5（arm64/armv7），`libcooperation.so` 与 debug APK 构建成功，`ZSTD_*` 已静态链接 |
+| P5-2 | 新旧兼容矩阵 | 部分 | 旧 token、旧客户端行为、服务端关闭 stream（运行中 404 与启动时省略 claim）四条兼容用例通过；真正的旧版本二进制全矩阵待环境 |
 | P5-3 | 性能验收 | 完成 | 100k 2.58 s；1M×4KB（4 GB）58.5 s、RSS 56.5 MB；10 GB 单文件 42.3 s、RSS 20.0 MB；均逐文件校验一致 |
-| P5-4 | 灰度/开关/回滚 | 部分 | `DDE_COOPERATION_HTTPWEB_STREAM=0` 强制 legacy；服务端无 stream 能力时自动回退；尚未做故障注入下的自动回退演练 |
-| P5-5 | 文档收尾 | 部分 | 调研报告 §6.3/§6.4、交接文档已更新；发布说明与兼容矩阵待补 |
+| P5-4 | 灰度/开关/回滚 | 部分 | 客户端 `DDE_COOPERATION_HTTPWEB_STREAM=0`、服务端 `DDE_COOPERATION_HTTPWEB_SERVER_STREAM=0`、token `DDE_COOPERATION_HTTPWEB_TOKEN_DTP=0` 三个开关；服务端 404 或 token 无 claim 时自动回退；故障注入下的自动回退演练未做 |
+| P5-5 | 文档收尾 | 完成 | 调研报告 §6.3/§6.4、交接文档 §7.4/§7.6（能力协商、兼容矩阵、发布/回滚清单）已补齐；Windows/Android 实机结果待回填 |
 
 ### 7.1 Phase 1 线格式实现细节（Phase 2/3 必须遵循）
 
@@ -329,15 +329,116 @@ D3 写的是“优先静态链接”。实测发现这在 Linux 上会把符号�
 
 > 已于 2026-11-03 经用户确认：D3 改为“Linux 共享库、Windows/Android 静态”。同步更新本文件 §3、调研报告 §4.4/§6、实施计划 §2。
 
+### 7.4 JWT `dtp` 能力协商（2026-11-03）
+
+新服务端在 token 中增加字符串 claim：
+
+```json
+{"v":2,"codecs":["zstd","deflate"]}
+```
+
+未编译 zstd 的构建只声明 `deflate`。客户端 `TokenCache::getDtpFromToken()` 只把 claim 当作提示（不验签）；无 claim / 版本 <2 / JSON 损坏时直接 legacy，有 claim 时按交集选择 codec 并在 `stream/...&codec=` 中指定。服务端每次请求仍验证 JWT 签名。
+
+`DDE_COOPERATION_HTTPWEB_TOKEN_DTP=0` 让 `genToken` 生成旧形状 token，用于回滚和兼容演练。
+
+### 7.5 Android 交叉编译与 APK（2026-11-03）
+
+环境：Android SDK 34 + NDK 27.0.11902837 + CMake 3.22.1（SDK 自带 Ninja）；OpenSSL 1.1.1w 与 zstd 1.5.5 均用 NDK 从源码交叉编译，覆盖 `arm64-v8a` 和 `armeabi-v7a`。
+
+**预编译布局：**
+
+- `$ANDROID_HOME/android_openssl/ssl_1.1/{arm64-v8a,armeabi-v7a}/libcrypto_1_1.so`、`libssl_1_1.so`，头文件在 `ssl_1.1/include/openssl`。
+- `$ANDROID_HOME/android-zstd/include/{zstd.h,zstd_errors.h,zdict.h}`。
+- `$ANDROID_HOME/android-zstd/{arm64-v8a,armeabi-v7a}/lib/libzstd.a`。
+- `$ANDROID_HOME/android-zstd/lib/cmake/zstd/zstdConfig.cmake` 按 `${ANDROID_ABI}` 选择静态库。
+- 若自己编 OpenSSL，必须把两个 `.so` 的 SONAME/NEEDED 从 `libcrypto.so.1.1`、`libssl.so.1.1` 改成 `libcrypto_1_1.so`、`libssl_1_1.so`（KDAB 预编译包已处理）；否则 APK 里的文件名与运行时依赖名不一致，加载 `libcooperation.so` 会失败。
+
+**构建 APK：**
+
+```bash
+export ANDROID_HOME=/path/to/android-sdk
+export ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.0.11902837
+export ANDROID_ZSTD_DIR=$ANDROID_HOME/android-zstd
+
+cd android
+bash ./gradlew :app:assembleDebug
+```
+
+`android/modules/cooperation/build.gradle` 在检测到 `ANDROID_ZSTD_DIR` 时传入 `-Dzstd_DIR=${ANDROID_ZSTD_DIR}/lib/cmake/zstd`；未设置时退化为 deflate-only。
+
+**结果：**
+
+- 输出：`android/build/app/outputs/apk/debug/UOSAssistant_v1.0.2_debug.apk`（约 26 MB）。
+- 包名 `com.deepin.assistant.debug`，`minSdk 26`、`targetSdk 34`，debug 签名校验通过；debug 构建只打包 `arm64-v8a`（app 的 abiFilter），模块同时编出了 `armeabi-v7a` 的 `libcooperation.so`。
+- `libcooperation.so` 内含 `ZSTD_compressStream2`/`ZSTD_decompressStream` 定义，确认 zstd 静态链接；`SslCertConf` 与 JNI `initNative` 符号均在包内。
+- 真机验证（2026-11-12）：OPPO PFJM10 / Android 13 / arm64-v8a，USB ADB（`ab3d0a36`）。`adb install` 成功，启动进入 `HomeActivity`，界面显示设备名与 IP（10.8.7.22），无 `UnsatisfiedLinkError`。
+- 该 APK 为 `extractNativeLibs=false`，库直接从 APK 映射；进程 maps 中可见 `libcooperation.so`、`libcrypto_1_1.so`、`libssl_1_1.so` 对应的 APK 数据偏移（`0x68f000`/`0x16bc000`/`0xde9000`），确认静态 zstd、OpenSSL SONAME 补丁与依赖解析在真机上均正常。
+- `initNative(ip, filesDir)` 在 `HomeActivity` 初始化时无条件调用，之后才更新自身 IP；真机已进入首页并显示 IP，说明 JNI 签名与调用路径正常。
+- 证书是惰性生成的：`SecureConfig::clientContext()`/`serverContext()` 首次调用时才写 `<filesDir>/.cooperation/SSL/Barrier.pem`。Android 端 `sessionListen()` 仍是历史注释状态，客户端只能经扫码连接触发。
+- 端到端扫码（2026-11-12）：在测试机 `10.8.15.62` 安装 1.2.8 PC 端并显示二维码，手机（`10.8.15.67`）扫码成功；手机侧 `files/.cooperation/SSL/Barrier.pem` 已生成（2664 字节，SHA-256 `3E:DE:99:CE:...:19:12`，与 PC 证书不同，确认是每设备证书），PC 侧 `10.8.15.62:51598` 与手机 `10.8.15.67:43404` 建立会话，VNC `10.8.15.62:51686` ↔ 手机 `5900` 连接并认证成功，投屏正常。
+
+**`configs/crypt/cert.h` 断点修复：**
+
+- Android `SecureConfig` 不再包含已删除的 `configs/crypt/cert.h`，改用 `SslCertConf` 生成/加载每设备自签名证书。
+- Kotlin 调用改为 `initNative(ip, filesDir.absolutePath)`；JNI 将其设为 `<filesDir>/.cooperation`，证书持久化在 app 私有目录。
+- `sslconf` 已加入 `libcooperation.so` 链接。
+- `dev_share/cross-host/certificates/desktop.key` 与旧 `cert.h` 的硬编码私钥一致，但**没有**把旧证书重新写回代码；仍按安全修复后的方案生成每设备证书。
+
+### 7.6 发布与回滚清单（2026-11-03）
+
+**构建/打包：**
+
+- Linux：`Build-Depends` 新增 `libzstd-dev`；zlib 仍由既有依赖链提供，不额外声明。运行时由 `${shlibs:Depends}` 带 `libzstd1`。
+- Dev 包：`dde-cooperation-dev` 新增 `libzstd-dev`；zlib 依赖沿用既有工具链，不重复声明。
+- Windows：vcpkg manifest 含 `zlib`/`zstd`，`clean_build.bat` 使用 `*-windows-static-md`；安装包不需要额外 DLL（尚未实机验证）。
+- Android：debug APK 已带静态 zstd（`ANDROID_ZSTD_DIR` 指向两 ABI 的预编译包）；未提供时退化为 deflate。
+
+**灰度/回滚开关：**
+
+| 开关 | 作用 | 默认 |
+|---|---|---|
+| `DDE_COOPERATION_HTTPWEB_STREAM=0` | 客户端强制 legacy | 启用 |
+| `DDE_COOPERATION_HTTPWEB_SERVER_STREAM=0` | 服务端 `stream/` 返回 404，且新 token 不写 `dtp` claim | 启用 |
+| `DDE_COOPERATION_HTTPWEB_TOKEN_DTP=0` | 生成旧形状 token（无 `dtp` claim） | 写入 claim |
+| `DDE_COOPERATION_HTTPWEB_STREAM_IDLE_TIMEOUT` | 空闲 watchdog 秒数 | 60 |
+| `DDE_COOPERATION_HTTPWEB_CLIENT_NODELAY=0` | 关闭客户端 TCP_NODELAY（基准复现旧基线） | 开启 |
+
+**回滚顺序：** 先设服务端 `SERVER_STREAM=0`（新连接全部 legacy，已发 token 的客户端遇 404 自动回退），再按需设客户端 `STREAM=0`；无需降级二进制。旧数据无需迁移。
+
+**发布前验证：**
+
+- `lib_logic_tests` 全绿（当前 330 项）。
+- `build-core` Release 构建通过。
+- 1k/10k/100k 基准逐文件校验一致；1M/10GB 大规模验收见调研报告 §6.3。
+- 新旧 token、旧客户端行为、服务端关闭 stream 三条兼容路径均有集成测试。
+
 ## 8. 会话日志
+
+### 2026-11-12 — Android 真机扫码投屏 + DTP2 流端到端验证
+
+- 环境：OPPO PFJM10（Reno7 5G），Android 13，arm64-v8a；USB ADB（序列号 `ab3d0a36`）可正常使用。
+- 安装：`adb install -r android/build/app/outputs/apk/debug/UOSAssistant_v1.0.2_debug.apk` 成功，包名 `com.deepin.assistant.debug`。
+- 启动：`SplashActivity` → `HomeActivity`，界面显示 “UOS助手 / 扫码连接设备 / OPPO Reno7 5G | IP: 10.8.7.22”，无崩溃。
+- 原生库：APK 为 `extractNativeLibs=false`；`/proc/<pid>/maps` 中出现 APK 数据偏移 `0x68f000`（`libcooperation.so`）、`0x16bc000`（`libcrypto_1_1.so`）、`0xde9000`（`libssl_1_1.so`）的映射，证明 `libcooperation.so`、静态 zstd 与打过 SONAME 补丁的 OpenSSL 均已在真机加载。
+- JNI：`HomeActivity.initView()` 无条件调用 `initNative(ip, filesDir.absolutePath)`，之后界面才显示自身 IP；应用未出现 `UnsatisfiedLinkError`，说明 JNI 签名与配置目录传递正常。
+- PC 端：测试机 `10.8.15.62`（UOS 25 x86_64）从源码重编并安装 1.2.8；运行中的 `dde-cooperation` 已加载 `/usr/lib/x86_64-linux-gnu/libcooperation-core.so.1.0.0`，库内含 `Stream disabled.`、`DDE_COOPERATION_HTTPWEB_SERVER_STREAM`、`ZSTD_compressStream2`/`ZSTD_decompressStream`，`NEEDED` 含 `libzstd.so.1`，确认不是旧库。
+- 扫码：手机连到 `10.8.15.0/24`（`10.8.15.67`），扫描 PC 端“手机协同”二维码成功；手机侧 `files/.cooperation/SSL/Barrier.pem` 已生成（2664 字节，SHA-256 `3E:DE:99:CE:...:19:12`，与 PC 证书不同，确认是每设备证书）。
+- 会话/投屏：PC `10.8.15.62:51598` ↔ 手机 `10.8.15.67:43404` 保持 ESTAB；PC `10.8.15.62:51686` ↔ 手机 `5900` 建立 VNC 连接，日志显示 “VNC authentication succeeded”，投屏正常。
+- DTP2 流（同一构建的 loopback 基准）：默认 token（含 `dtp` claim）10k×4KB（40.96 MB）耗时 0.344 s、`http_info_requests=0`、`http_download_requests=1`、10000/10000 文件、CRC 校验 `verified=ok`、最长停顿 22 ms。旧形状 token（`DDE_COOPERATION_HTTPWEB_TOKEN_DTP=0`）自动回退 legacy，`http_info_requests=74`、`http_download_requests=10000`、同样校验通过（48.5 s），证明能力协商和回退都在真实构建上生效。
+- 权限：`adb shell pm grant` / `appops set` 仍被域管拒绝（shell 无 `GRANT_RUNTIME_PERMISSIONS`、`MANAGE_APP_OPS_MODES`）；CAMERA 已由用户手动授予。
+- 结论：扫码、TLS、会话、投屏与 DTP2 流/回退均在真实设备与真实构建上验证通过。仍未覆盖：两台真实 GUI 应用之间的文件传输、真正的旧版本二进制矩阵、Windows 实机。
 
 ### 2026-11-03 — Phase 5：打包与大规格验收
 
-- 打包：Debian `Build-Depends` 增加 `libzstd-dev`；Windows vcpkg manifest 增加 `zstd`，`clean_build.bat` 改用 `*-windows-static-md` 三元组，使 zlib/zstd 静态进入二进制、安装包不带额外 DLL；Android 暂无 zstd 来源，保持 deflate 回退。
+- 打包：Debian `Build-Depends` 增加 `libzstd-dev`；Windows vcpkg manifest 增加 `zstd`，`clean_build.bat` 改用 `*-windows-static-md` 三元组，使 zlib/zstd 静态进入二进制、安装包不带额外 DLL；Android 随后补齐 arm64/armv7 的 zstd 预编译并成功出包（见下）。
 - 验收：100k 复测 2.58 s；1M×4KB（4 GB，NVMe）58.5 s、CPU 33.1/71.5 s、RSS 56.5 MB、最长停顿 42 ms；10 GB 单文件 42.3 s、RSS 20.0 MB、最长停顿 765 ms；两份数据均逐文件校验一致。
 - 复现：基准新增 `DDE_COOPERATION_HTTPWEB_CLIENT_NODELAY=0/1` 注入，可在 `--no-delay` 缺省时精确复现“两端 Nagle 全开”的旧基线。
-- 未完成：Windows 实机构建、Android zstd 预编译/vendored、新旧二进制兼容矩阵、故障注入下的自动回退演练。
-- 测试：`lib_logic_tests` **322/322** 通过；`build-core` 生产构建通过。
+- 能力协商：`genToken` 新增 `dtp` claim（v2 + codec 列表），`getDtpFromToken()` 解析；无 claim 的旧 token 直接走 legacy，不再先发一次失败的 stream 请求；`DDE_COOPERATION_HTTPWEB_TOKEN_DTP=0` 可生成旧形状 token 做回滚/兼容演练。
+- 兼容测试：新增 `LegacyTokenUsesLegacyProtocol`、`StreamDisabledByEnvUsesLegacyProtocol`、`ServerStreamDisabledFallsBackToLegacy`，分别模拟旧 token、旧客户端、服务端关闭 stream，均断言走 info/download 端点且文件正确落盘。
+- 服务端新增 `DDE_COOPERATION_HTTPWEB_SERVER_STREAM=0` 灰度开关：`stream/` 返回 404，客户端自动回退 legacy；开关在启动时生效时，`genToken` 也不再写 `dtp` claim，客户端直接走 legacy、不产生一次 404。
+- Android：补齐 arm64/armv7 的 OpenSSL 1.1.1w 与 zstd 1.5.5 预编译；把 `configs/crypt/cert.h` 断点迁移到 `SslCertConf`（JNI `initNative(ip, filesDir)`，证书存 app 私有目录）；`libcooperation.so` 与 debug APK 构建成功，APK 约 26 MB、`ZSTD_*` 静态链接。
+- 未完成：Windows 实机构建、Android APK 真机/模拟器安装验证、真正的旧版本二进制兼容矩阵、故障注入下的自动回退演练。
+- 测试：`lib_logic_tests` **330/330** 通过；`build-core` 生产构建通过；Android `assembleDebug` 构建通过；stream 基准仍为 1 次 download、0 次 info。
 
 ### 2026-11-03 — Phase 4：断点续传、watchdog、故障注入
 
@@ -484,8 +585,6 @@ D3 写的是“优先静态链接”。实测发现这在 Linux 上会把符号�
 - git status：见会话结束时的 `git status --short`（未提交）。
 
 > 后续 Phase 的任务级状态在实施计划第 4 节；本文只维护阶段状态和当前 Phase 的任务状态，避免两份表漂移。
-
-## 8. 会话日志
 
 ### 2026-10-29 — 调研、设计与交接
 

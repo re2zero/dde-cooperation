@@ -485,6 +485,8 @@ flowchart TB
 4. **实现顺序**：先把 deflate 路径打通（它是回退路径，必须有测试覆盖），再启用 zstd 默认。这样即使某个平台打包异常，也能降级验证。
 5. **zstd 使用约束**：使用标准 zstd frame，不启用实验特性/字典；压缩级别 1–3，不要默认 19；避免老版本 libzstd 不兼容。
 
+**实施验证（Android，2026-11-03 / 真机 2026-11-12）：** NDK 27 交叉编译 zstd 1.5.5 静态库后，`httpweb`/`session` 与 `libcooperation.so` 在 arm64-v8a/armeabi-v7a 上编译通过（`HTTPWEB_HAVE_ZSTD=1`），debug APK（约 26 MB）构建成功，`ZSTD_*` 已静态链接。Android 遗留 `cert.h` 引用已迁移到 `SslCertConf`，证书存于 app 私有目录。交叉编译时必须禁用宿主 pkg-config，避免把宿主 `libzstd` 链接进来。真机（OPPO PFJM10 / Android 13 / arm64-v8a）安装启动正常，进程 maps 直接从 APK 映射了 `libcooperation.so`、`libcrypto_1_1.so`、`libssl_1_1.so`，证明静态 zstd 与 OpenSSL SONAME 补丁可用。端到端扫码已在 UOS 25 测试机 `10.8.15.62` 与手机 `10.8.15.67` 之间验证：手机生成独立 `<filesDir>/.cooperation/SSL/Barrier.pem`，会话 `51598` 与 VNC `5900` 均建立，投屏正常。DTP2 流在同一构建的 loopback 基准中验证：默认 `dtp` token 下 10k×4KB（40.96 MB）0.344 s、0 info 请求、1 次 download、10000/10000 校验通过；`DDE_COOPERATION_HTTPWEB_TOKEN_DTP=0` 时自动回退 legacy（74 info + 10000 download），同样校验通过。
+
 **为什么不把 zstd 作为唯一 codec：**
 
 - 旧版本 peer 不认识 stream 协议，需要 legacy；中间版本可能只支持 deflate。
@@ -673,13 +675,23 @@ tokenHash, rootName, frameIndex, offset, fileSize, mtime, completedBytes
 - `TransferCheckpoint`：断点状态。
 - `FileServer::serveStream`、`FileClient` 的私有 stream 方法。
 
-**能力协商：**
+**能力协商（已实现，2026-11-03）：**
 
-- 发送端 `TokenCache::genToken` 增加 `dtp` claim，声明版本和 codec 列表。
-- 接收端解析 token；没有 `dtp` 就走 legacy。
-- 有 `dtp` 则按交集选择 codec，在 stream 请求中指定。
-- 新版默认 zstd；只有双方都支持 zstd 时才用 zstd，否则 deflate；旧端 legacy。
-- 新服务端保留旧 `info`/`download` 端点；旧接收端不会调用 stream。
+- 发送端 `TokenCache::genToken` 增加字符串 claim `dtp`，内容为 `{"v":2,"codecs":["zstd","deflate"]}`；未编译 zstd 时只列 `deflate`。
+- 接收端 `TokenCache::getDtpFromToken()` 解析（不验签，仅作提示）；没有 claim、版本 <2 或 JSON 损坏时直接走 legacy，不先发一次注定失败的 stream 请求。
+- 有 claim 时取 codec 交集：双方都支持 zstd 才用 zstd，否则 deflate；codec 仍由 stream 请求显式指定，服务端逐请求验签。
+- `DDE_COOPERATION_HTTPWEB_TOKEN_DTP=0` 生成旧形状 token，用于回滚和兼容测试。
+- 新服务端保留旧 `info`/`download` 端点；旧接收端忽略 `dtp` claim，继续走 legacy。
+
+**兼容矩阵：**
+
+| 服务端 | 客户端 | 行为 |
+|---|---|---|
+| 旧 | 旧 | legacy |
+| 旧 | 新 | token 无 `dtp` → 新客户端直接 legacy |
+| 新 | 旧 | 旧客户端忽略 claim → legacy 端点 |
+| 新（stream 关闭） | 新 | `stream/` 404 → 客户端自动回退 legacy |
+| 新 | 新 | stream；zstd/deflate 取交集 |
 
 **进度语义：**
 
@@ -687,12 +699,14 @@ tokenHash, rootName, frameIndex, offset, fileSize, mtime, completedBytes
 - `WEB_FILE_BEGIN/END` 每个文件一对；`WEB_INDEX_BEGIN/END` 每个顶层选择项一对。
 - 失败不发 `WEB_TRANS_FINISH`。
 
-**开关：**
+**开关（实现值）：**
 
-- `DDE_COOPERATION_TRANSFER_STREAM=0/1` 强制 legacy/stream。
-- `DDE_COOPERATION_TRANSFER_CODEC=deflate|zstd|none`。
-- `DDE_COOPERATION_TRANSFER_LEVEL=1..9`。
-- `DDE_COOPERATION_TRANSFER_CHUNK=65536`。
+- `DDE_COOPERATION_HTTPWEB_STREAM=0` 客户端强制 legacy；缺省/1 启用 stream。
+- `DDE_COOPERATION_HTTPWEB_SERVER_STREAM=0` 服务端关闭 `stream/`（返回 404），并在生成 token 时省略 `dtp` claim；客户端自动回退 legacy。
+- `DDE_COOPERATION_HTTPWEB_TOKEN_DTP=0` 生成不带 `dtp` claim 的旧形状 token。
+- `DDE_COOPERATION_HTTPWEB_STREAM_IDLE_TIMEOUT=<秒>` 覆盖 60s 空闲 watchdog。
+- `DDE_COOPERATION_HTTPWEB_CLIENT_NODELAY=0` 关闭客户端 TCP_NODELAY（基准复现旧基线用，生产默认 1）。
+- codec 由 `dtp` claim 交集自动选择；level 当前由服务端默认 `clampCompressionLevel` 决定，尚无环境变量覆盖。
 
 ### 4.10 备选方案对比
 

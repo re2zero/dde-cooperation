@@ -242,10 +242,10 @@ related_docs = [
 
 **Phase 5 实施结果（2026-11-03）：**
 
-- P5-1：Debian `Build-Depends` 已加 `libzstd-dev`，运行时由 `${shlibs:Depends}` 带 `libzstd1`；`cmake/vcpkg.json.in` 已加 `zstd`，`clean_build.bat` 改用 `x86/x64-windows-static-md`，让 zlib/zstd 静态进二进制。Windows 尚未实机构建验证。Android 目前没有 zstd 预编译或 vendored 源码，构建会走 `HTTPWEB_HAVE_ZSTD=0` 的 deflate 回退；启用方式是通过 `CMAKE_PREFIX_PATH` 提供带 `zstd::libzstd_static` 的预编译前缀。
-- P5-2：未执行。需要旧版本二进制才能覆盖“旧↔旧、旧→新、新→旧、新↔新”和 zstd/deflate 组合；代码级已有 codec 协商与 stream/legacy 开关测试。
+- P5-1：Debian `Build-Depends` 已加 `libzstd-dev`，运行时由 `${shlibs:Depends}` 带 `libzstd1`；`cmake/vcpkg.json.in` 已加 `zstd`，`clean_build.bat` 改用 `x86/x64-windows-static-md`，让 zlib/zstd 静态进二进制。Windows 尚未实机构建验证。Android 已用 NDK 27 交叉编译 zstd 1.5.5 静态库（arm64/armv7），`libcooperation.so` 与 debug APK 构建成功（`HTTPWEB_HAVE_ZSTD=1`，`ZSTD_*` 已静态链接）；APK 已在 OPPO PFJM10 / Android 13 真机安装启动，`libcooperation.so`、`libcrypto_1_1.so`、`libssl_1_1.so` 均从 APK 成功映射。Android 的 `configs/crypt/cert.h` 断点已迁移到 `SslCertConf`：Kotlin 传入 app 私有 `filesDir`，证书持久化在 `<filesDir>/.cooperation`。2026-11-12 在 UOS 25 测试机 `10.8.15.62` 安装 1.2.8 PC 端后，手机 `10.8.15.67` 扫码成功，手机证书落盘、会话 `51598` 与 VNC `5900` 建立并投屏正常；测试机上同构建的 DTP2 流基准 10k×4 KB 0.344 s、10000/10000 校验通过，`TOKEN_DTP=0` 时自动回退 legacy 并校验通过。
+- P5-2：部分执行。JWT `dtp` claim 已落地（`{"v":2,"codecs":[zstd,deflate]}`），新客户端遇到无 claim 的旧 token 直接走 legacy；`DDE_COOPERATION_HTTPWEB_TOKEN_DTP=0` 可生成旧形状 token，`DDE_COOPERATION_HTTPWEB_STREAM=0` 可模拟旧客户端，`DDE_COOPERATION_HTTPWEB_SERVER_STREAM=0` 可关闭服务端 stream，三条兼容用例均通过。真正的旧版本二进制、旧→新/新→旧全矩阵仍需发布环境。
 - P5-3：完成。100k 2.58 s；1M×4 KB（4 GB，NVMe）58.5 s、CPU 33.1/71.5 s、RSS 56.5 MB、最长停顿 42 ms；10 GB 单文件 42.3 s、RSS 20.0 MB、最长停顿 765 ms；两份数据逐文件校验一致。
-- P5-4：`DDE_COOPERATION_HTTPWEB_STREAM=0` 可强制 legacy；服务端不返回 `X-DTP-Stream` 时自动回退；故障注入下的自动回退演练未做。
+- P5-4：客户端 `DDE_COOPERATION_HTTPWEB_STREAM=0` 强制 legacy；服务端 `DDE_COOPERATION_HTTPWEB_SERVER_STREAM=0` 让 `stream/` 返回 404 并在新 token 中省略 `dtp` claim，客户端自动回退；`DDE_COOPERATION_HTTPWEB_TOKEN_DTP=0` 生成旧 token。四条兼容用例已覆盖，故障注入下的自动回退演练未做。
 - P5-5：调研报告 §6.3/§6.4、交接文档状态与会话日志已更新；发布说明和兼容矩阵待补。
 
 ## 5. 里程碑与排期
