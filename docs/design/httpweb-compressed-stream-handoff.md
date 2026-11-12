@@ -35,13 +35,13 @@ related_docs = [
 | 项 | 状态 |
 |---|---|
 | 分支 | `v25-trans`（文档旧快照写的是 `v20-trans`，以实际 git 为准） |
-| 代码改动 | Phase 0–5 主体完成；Android APK 已真机安装、扫码并投屏成功；真实目录符号链接包含/环检测修复已完成（待提交） |
-| Git 状态 | 已提交 6 个代码/文档提交（未推送）；本轮 walker 包含策略、祖先链环检测、测试与三份文档改动未提交 |
+| 代码改动 | Phase 0–5 主体完成；Android APK 已真机安装、扫码并投屏成功；根内符号链接保留/根外跳过与 Symlink 帧已完成（待提交） |
+| Git 状态 | 已提交 7 个代码/文档提交（未推送）；本轮 Symlink 帧、walker preserve 模式、测试与三份文档改动未提交 |
 | 设计状态 | 已评审，D1–D12 冻结 |
-| 实施状态 | Phase 0–5 完成（P5-1/P5-3/P5-4/P5-5）；P4-5 部分；真实目录 `~/work` 全树验收完成 |
+| 实施状态 | Phase 0–5 完成（P5-1/P5-3/P5-4/P5-5）；P4-5 部分；真实目录 `~/work` 全树 + 链接还原验收完成 |
 | 下一任务 | Windows 实机验证；P5-2 旧二进制矩阵；P4-5 慢盘/磁盘满/停止专项；两台真实 GUI 应用之间的文件传输 |
 | 开发机 Qt | 实际为 Qt6（`/usr/lib/qt6`）；文档旧快照写的 Qt5 已过时 |
-| GTest | 已安装 1.12.1；`-DDOTEST=ON` 可用；当前 333 项逻辑测试全绿 |
+| GTest | 已安装 1.12.1；`-DDOTEST=ON` 可用；当前 343 项逻辑测试全绿 |
 | zlib / zstd | zlib 1.3.2、zstd 1.5.7，CMake config 可用，静态库可链接进共享库 |
 | 构建约束 | C++17；Qt5/Qt6；Linux/Windows/Android |
 | zstd 决策 | 新版默认依赖并默认使用；deflate 永久回退；协议协商 codec |
@@ -61,7 +61,7 @@ related_docs = [
 | D9 | 每文件 CRC32 trailer + END `streamCRC` + `.part` 原子改名 |
 | D10 | 环境变量/特性开关可强制 legacy、指定 codec/level |
 | D11 | 生产默认开启 `TCP_NODELAY`（服务端与客户端）；基准工具可显式覆盖以复现旧基线 |
-| D12 | 发送端只跟随解析后仍在所选根内的符号链接；越界/不可解析跳过并上报；环检测按当前路径祖先链，不用全局 inode 去重；v1 不保留链接本身 |
+| D12 | 新接收端通过 `links=1` 协商后，根内符号链接以 Symlink 帧保留并还原（目标改写为相对链接父目录），根外/不可解析跳过；未协商的旧接收端保持跟随+实体化；旧跟随模式按当前路径祖先链检测环，不用全局 inode 去重 |
 
 完整理由见调研报告 4.4 和 4.7；变更规则见实施计划第 2、10 节。
 
@@ -190,7 +190,7 @@ TEST_BIN="$(find build-dev -type f -executable -name lib_logic_tests | head -1)"
 
 | ID | 任务 | 状态 | 备注 |
 |---|---|---|---|
-| P2-1 | `StreamWalker` 确定性遍历 | 完成 | 每层字节序排序；显式栈；根内符号链接跟随/越界跳过；祖先链 `(dev,inode)` 环检测；特殊文件/不安全名/深度上限跳过并上报；16 项测试 |
+| P2-1 | `StreamWalker` 确定性遍历 | 完成 | 每层字节序排序；显式栈；preserve 模式发 Symlink 帧/根外跳过；旧模式根内跟随+祖先链环检测；特殊文件/不安全名/深度上限跳过并上报；19 项测试 |
 | P2-2 | `StreamProducer` | 完成 | 前导→遍历→帧→压缩→sink；每文件 flush；取消/文件缩短/打开失败语义；事件回调；8 项测试 |
 | P2-3 | `serveStream` 端点 | 完成 | `GET stream/<b64>&token&codec&level&from&off`；无 Content-Length、`Connection: close`；from/off≠0 返回 501；新增 `SetOpenEndedBody()` |
 | P2-4 | 异步发送与背压 | 完成 | `SendResponseBodyAsync` + 2MB 高水位；END 后等待发送队列排空再 `Disconnect`；生产者线程由 FileServer 持有并在 stop() join |
@@ -203,7 +203,7 @@ TEST_BIN="$(find build-dev -type f -executable -name lib_logic_tests | head -1)"
 |---|---|---|---|
 | P3-1 | token 能力协商 | 完成 | `genToken` 写入 `dtp` claim（`{"v":2,"codecs":[zstd,deflate]}`）；`getDtpFromToken` 解析；无 claim 直接 legacy；`DDE_COOPERATION_HTTPWEB_TOKEN_DTP=0` 可回滚；服务端仍逐请求验签 |
 | P3-2 | `StreamConsumer` | 完成 | 解压/解析/落盘一体；16KB 解压切片限内存；10 项测试 |
-| P3-3 | 路径映射/冲突/安全 | 完成 | 根目录只建一次并按 web 名命名；冲突 `(1)`；`..`/绝对路径拒绝；跨 symlink 拒绝；归档内重复名不覆盖 |
+| P3-3 | 路径映射/冲突/安全 | 完成 | 根目录只建一次并按 web 名命名；冲突 `(1)`；`..`/绝对路径拒绝；跨 symlink 拒绝；归档内重复名不覆盖；Symlink 帧目标词法+canonical 双重校验后还原 |
 | P3-4 | `.part`/CRC/rename | 完成 | 边写边由解析器校验每帧 CRC；成功后 rename；失败/取消删除 `.part` |
 | P3-5 | 进度/错误/legacy 回退 | 完成 | 流式进度映射 `WEB_FILE_*`/`onProgress`；404/非流响应在写盘前回退 legacy；`DDE_COOPERATION_HTTPWEB_STREAM=0` 可关闭 |
 | P3-6 | 接收端集成测试 | 完成 | HTTP 单文件往返 + 消费者树/损坏/截断/穿越/重名；100k A/B 逐文件校验一致 |
@@ -408,23 +408,25 @@ bash ./gradlew :app:assembleDebug
 
 **发布前验证：**
 
-- `lib_logic_tests` 全绿（当前 333 项）。
+- `lib_logic_tests` 全绿（当前 343 项）。
 - `build-core` Release 构建通过。
 - 1k/10k/100k 基准逐文件校验一致；1M/10GB 大规模验收见调研报告 §6.3。
 - 新旧 token、旧客户端行为、服务端关闭 stream 三条兼容路径均有集成测试。
 
 ## 8. 会话日志
 
-### 2026-11-12 — 真实目录全树验证 + 符号链接包含/环检测修复
+### 2026-11-12 — 真实目录全树验证 + 根内符号链接保留
 
 - 真实工程目录 `youqu-upstream`（同机 loopback）：1 189 文件/406 目录/81.58 MB，stream 2.295 s、legacy 7.597 s（约 3.3×）；stream 0 info + 1 download、最长停顿 44 ms，legacy 407 info + 1 178 download、908 ms。非空文件 SHA-256 全一致；stream 保留 11 个空文件和 10 个空目录，legacy 全部丢失。
-- 发现 DTP2 跟随符号链接会读到所选根之外的文件。已在 `StreamWalker` 增加根内 containment：只跟随解析后仍在根内的链接；越界/不可解析计入 `skippedOutside` 并上报；`WalkStats`/`StreamProducerStats` 暴露该计数。
+- 发现 DTP2 跟随符号链接会读到所选根之外的文件。`StreamWalker` 增加根内 containment：越界/不可解析计入 `skippedOutside` 并上报；`WalkStats`/`StreamProducerStats` 暴露该计数。
 - 整棵测试机 `~/work`（113 259 普通文件/13 641 目录/18.09 GB，1 819 个符号链接，其中 68 个越界或不可解析）跨机 stream：
-  - 第一轮 114 776 文件、20.762 GB、327.1 s、0 失败；清单对照发现 99 个源路径缺失。根因是全局 `(dev,inode)` visited 把 `cpp-12 -> gcc-12-base` 这类兄弟别名当成环，真实路径被跳过。
-  - 改为“当前路径祖先链”环检测后，第二轮 115 093 文件、20.772 GB、321.6 s、0 失败、RSS 20.7 MB、最长停顿 2.859 s；源清单 0 缺失、0 大小不符、0 目录缺失，1 834 条内部链接别名副本（额外 2.68 GB）。最大 3 个文件 SHA-256 一致。
-- 权限限制：帧携带 mode，但 v1 接收端未 `chmod`；真实目录落盘 mode 由 umask 决定（stream 664、legacy 644），只读/可执行位不保留。空文件/空目录只有 stream 保留。
-- 测试：新增 `SymlinkInsideRootIsFollowed`、`SymlinkOutsideRootIsSkipped`、`SymlinkToSiblingDirectoryKeepsBothPaths`；`StreamWalkerTest` 16 项，完整 `lib_logic_tests` 333 项全绿。
-- 结论：真实目录传输可行；`~/work` 全树在 5 分半内完成，越界读取已封堵，符号链接按“根内实体化、根外跳过”的 v1 策略处理。仍未做整棵 legacy 对照（预计 10 分钟以上）和两台真实 GUI 之间的传输。
+  - 早期 114 776 文件、20.762 GB、327.1 s、0 失败；清单对照发现 99 个源路径缺失。根因是全局 `(dev,inode)` visited 把 `cpp-12 -> gcc-12-base` 这类兄弟别名当成环，真实路径被跳过。
+  - 改为“当前路径祖先链”环检测后，115 093 文件、20.772 GB、321.6 s、0 失败；0 缺失/大小不符，1 834 条内部链接别名副本（额外 2.68 GB）。
+  - 最终实现 Symlink 帧：新客户端带 `links=1`，根内链接保留并还原、根外跳过。整树 113 259 文件 + 1 751 链接、18.092 GB、314.6 s、0 失败、RSS 20.3 MB、最长停顿 5.343 s、0 info + 1 download；源/输出 0 缺失/0 多余/0 大小不符，1 751 个链接解析目标 0 不一致，68 个外链跳过，无 `.part`。重复的 2.68 GB 消失。
+- 协议：新增 `Symlink` 帧（目标为相对链接父目录的规范化路径，可含 `..` 但不得越根）；服务端仅在新客户端请求 `links=1` 时发送，响应头 `X-DTP-Links`；旧客户端仍走“跟随+实体化”，旧服务端忽略参数也不影响新客户端。`DDE_COOPERATION_HTTPWEB_STREAM_LINKS=0` 可回退。
+- 权限限制：帧携带 mode，但接收端未 `chmod`；真实目录落盘 mode 由 umask 决定（stream 664、legacy 644），只读/可执行位不保留。空文件/空目录只有 stream 保留。
+- 测试：新增 Symlink 帧往返/非法目标、walker preserve/outside/dangling、producer/consumer 链接还原、sender `links=1` 开关和 FileClient 端到端集成；`StreamWalkerTest` 19 项，完整 `lib_logic_tests` 343 项全绿。
+- 结论：真实目录传输可行；`~/work` 全树约 5 分 15 秒完成，根外读取已封堵，根内链接按原语义还原且不再复制目标内容。仍未做整棵 legacy 对照（预计 10 分钟以上）和两台真实 GUI 之间的传输。
 
 ### 2026-11-12 — Android 真机扫码投屏 + DTP2 流端到端验证
 
@@ -638,7 +640,7 @@ bash ./gradlew :app:assembleDebug
 7. **`offset > size` 会 `Content-Length` 下溢**；`std::stoll` 可能抛异常。stream 端点必须校验/捕获。
 8. **`HTTPFileClient::_canceled` 必须每请求重置**；`_callback` 弱指针和 `_status.path` 必须加锁/快照；`TransferWorker::_canceled` 改 atomic。
 9. **`webBind` 失败不能继续把 name 放进 token/RPC**；`requestInfo` 失败不能等价于空文件。
-10. **符号链接可能成环，也可能越界**：遍历只跟随解析后仍在所选根内的链接；环检测用当前路径的祖先链，不要用全局 `(dev,inode)` 集合（会把兄弟别名误判为环并丢路径）。
+10. **符号链接可能成环、越界，或把内容重复传输**：新客户端协商 `links=1` 时发 Symlink 帧保留根内链接，根外/不可解析跳过；旧客户端保持跟随+实体化。旧跟随模式的环检测用当前路径祖先链，不要用全局 `(dev,inode)` 集合（会把兄弟别名误判为环并丢路径）。
 11. **不要依赖 `directory_iterator` 顺序做断点**：每层排序。
 12. **不要直接写最终文件名**：`.part` + CRC/大小校验 + rename。
 13. **失败不要发 `WEB_TRANS_FINISH`**：发 `WEB_IO_ERROR`/`WEB_DISCONNECTED`。
@@ -688,7 +690,7 @@ bash ./gradlew :app:assembleDebug
 |---|---|---|
 | Android zstd 来源/ABI | 优先 NDK/项目预编译；不行则 vendored 源码 | Phase 5 P5-1 |
 | Windows zstd 静态三元组 | vcpkg `zstd:x64-windows-static` | Phase 5 P5-1 |
-| 符号链接：跟随还是保留 | 跟随（与现状一致）+ 环检测；保留作为后续增强 | Phase 2 P2-1 |
+| 符号链接：跟随还是保留 | 已实现：`links=1` 时保留根内链接并还原，根外跳过；旧客户端跟随+实体化 | 已决定 |
 | mode/mtime 是否默认保留 | v1 可选，不阻塞 | Phase 3 P3-4 |
 | 单文件选择是否走 stream | 先按“目录/multi-select 走 stream；单文件可 legacy 或 codec=none”验证 | Phase 3 集成后 |
 | 文件内偏移续传 | v2；v1 整文件 | Phase 4 P4-3 |

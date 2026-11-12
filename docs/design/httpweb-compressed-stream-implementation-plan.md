@@ -73,7 +73,7 @@ related_docs = [
 | D9 | 每文件 CRC32 trailer + END `streamCRC` + `.part` 原子改名 | 冻结 |
 | D10 | 通过环境变量/特性开关可强制 legacy 或指定 codec/level | 冻结 |
 | D11 | 生产默认开启 `TCP_NODELAY`（服务端与客户端）；基准可覆盖以复现旧基线 | 冻结 |
-| D12 | 发送端仅跟随解析后仍在所选根内的符号链接；越界/不可解析跳过并上报；环检测按当前路径祖先链，不用全局 inode 去重；v1 不保留链接本身 | 冻结 |
+| D12 | 新接收端通过 `links=1` 协商后，根内符号链接以 Symlink 帧保留并还原（目标改写为相对链接父目录），根外/不可解析跳过；未协商的旧接收端保持跟随+实体化；旧跟随模式按当前路径祖先链检测环，不用全局 inode 去重 | 冻结 |
 
 **变更规则：** 任何 D1–D12 的修改都必须同时更新本计划、调研报告和交接协议，并在 Decision Log 记录原因；未记录的口头变更不生效。
 
@@ -142,7 +142,7 @@ related_docs = [
 
 | ID | 任务 | 关键文件 | 依赖 | 验收 | 人日 |
 |---|---|---|---|---|---|
-| P2-1 | `StreamWalker`：确定性遍历 | `streamwalker.h/.cpp`（可并入 producer） | P1-2 | 每层排序；空目录；特殊文件跳过/报错；仅跟随根内符号链接；祖先链环检测；相对路径 | 1.5 |
+| P2-1 | `StreamWalker`：确定性遍历 | `streamwalker.h/.cpp`（可并入 producer） | P1-2 | 每层排序；空目录；特殊文件跳过/报错；preserve 模式发 Symlink/根外跳过；旧模式根内跟随+祖先链环检测；相对路径 | 1.5 |
 | P2-2 | `StreamProducer`：读盘/编码/压缩/队列 | `streamproducer.h/.cpp` | P2-1/P1-1 | 生产者线程；有界队列；64–256KB 读；每文件 flush；取消可退出 | 2 |
 | P2-3 | `FileServer::serveStream` 端点 | `fileserver.cpp` | P2-2 | 解析 name/token/codec/from/off；校验绑定路径；发送正确响应头；无 Content-Length | 1.5 |
 | P2-4 | 异步发送与背压 | `tcp_session.h/.cpp`、`fileserver.cpp` | P2-3 | `SendResponseBodyAsync`；send buffer 上限；高水位等待；END 后排空再关闭 | 1.5 |
@@ -159,7 +159,7 @@ related_docs = [
 - 每个文件结束 `Z_SYNC_FLUSH`，让接收端及时完成；流结束 `Z_FINISH`。
 - 错误帧/中止时也要正确结束 HTTP 响应；不能让客户端无限等待。
 
-**Phase 2 出口条件：** 本地客户端能完整解析一条 stream；发送 100k 文件不阻塞 IO 线程；停止/对端断开后生产者线程能退出；根外符号链接不被读取。
+**Phase 2 出口条件：** 本地客户端能完整解析一条 stream；发送 100k 文件不阻塞 IO 线程；停止/对端断开后生产者线程能退出；根外符号链接不被读取；协商 `links=1` 时根内链接以 Symlink 帧发出且不读目标内容。
 
 ### 4.4 Phase 3：接收端
 
@@ -381,7 +381,7 @@ cmake --build build-bench -j"$(nproc)" --target httpweb_transfer_benchmark
 - 无数据停顿次数/最长停顿。
 - 失败/重试次数；哈希一致性。
 - 真实目录：源/输出“路径+大小”清单的缺失/多余/大小不符计数；大文件 SHA-256；空文件/空目录数量。
-- 符号链接：根内跟随数、根外/不可解析跳过数（`skippedOutside`）、环截断数、实体化带来的额外字节。
+- 符号链接：根内链接数/还原数、解析目标不一致数、根外/不可解析跳过数（`skippedOutside`）、协商与未协商两种路径、实体化回退的额外字节。
 - 磁盘时间 vs 网络时间拆分（至少用不同磁盘/网络条件对比）。
 
 ### 6.6 兼容矩阵
@@ -410,7 +410,7 @@ cmake --build build-bench -j"$(nproc)" --target httpweb_transfer_benchmark
 - 单文件 size 超过剩余磁盘/上限；总大小异常。
 - CRC 错误、END 缺失、未知帧类型。
 - 服务端 `getPath` 前缀碰撞（`/foo` vs `/foobar`）、符号链接越界。
-- 遍历：根内文件链接实体化、根外/不可解析链接跳过、兄弟目录别名不丢路径、真环在 1 跳内截断。
+- 遍历：根内链接以 Symlink 帧保留并还原、根外/不可解析链接跳过、旧跟随模式兄弟目录别名不丢路径、真环在 1 跳内截断。
 - 畸形 token/JWT；`offset > size`；`stoll` 溢出。
 
 ## 7. 交付物清单
@@ -472,7 +472,7 @@ cmake --build build-bench -j"$(nproc)" --target httpweb_transfer_benchmark
 - [ ] `FileServer`/`FileClient` 公开 API 未变；旧端点可用。
 - [ ] 新↔新默认 zstd；仅 deflate 对端自动降级；旧端 legacy。
 - [ ] 100k 小文件端到端哈希一致；无 >10 秒无数据停顿。
-- [x] 真实目录：空文件/空目录保留；根外符号链接不读取；整棵 `~/work` 路径与大小全量对齐。
+- [x] 真实目录：空文件/空目录保留；根内符号链接保留并还原；根外链接不读取；整棵 `~/work` 路径、大小与链接目标全量对齐。
 - [ ] 停止 <1 秒；断网可续传；无最终残缺文件。
 - [ ] 接收端内存有界；IO 线程不做磁盘 I/O。
 - [ ] 编解码/帧/路径/安全/故障测试全绿。

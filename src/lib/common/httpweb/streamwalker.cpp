@@ -52,12 +52,70 @@ bool entryMeta(const std::string &path, EntryMeta *meta)
 #endif
 }
 
+// Computes a portable target for an in-root symlink. The wire target is
+// relative to the link's parent directory, so the receiver can recreate the
+// link under a different destination root. Absolute source paths are therefore
+// rewritten to a relative target.
+bool isWithinRoot(const fs::path &root, const fs::path &target, std::error_code *error);
+
+bool preservedLinkTarget(const fs::path &root, const fs::path &link,
+                         std::string *target, bool *toDirectory, bool *outside,
+                         std::string *error)
+{
+    *outside = false;
+    std::error_code ec;
+    const fs::path raw = fs::read_symlink(link, ec);
+    if (ec) {
+        *error = "cannot read symlink: " + ec.message();
+        return false;
+    }
+
+    fs::path resolved = raw.is_absolute()
+            ? fs::weakly_canonical(raw, ec)
+            : fs::weakly_canonical(link.parent_path() / raw, ec);
+    if (ec) {
+        // A dangling link still has a well-defined lexical target; it can be
+        // preserved as a dangling link on the receiver.
+        resolved = (raw.is_absolute() ? raw : link.parent_path() / raw).lexically_normal();
+        ec.clear();
+    }
+
+    std::error_code rootEc;
+    if (!isWithinRoot(root, resolved, &rootEc)) {
+        *outside = true;
+        *error = rootEc ? "cannot resolve symlink: " + rootEc.message()
+                        : "symlink target is outside the selected directory";
+        return false;
+    }
+
+    fs::path relative = fs::relative(resolved, link.parent_path(), ec);
+    if (ec || relative.is_absolute()) {
+        ec.clear();
+        relative = resolved.lexically_relative(link.parent_path());
+    }
+    if (relative.empty())
+        relative = ".";
+    if (relative.is_absolute()) {
+        *error = "cannot express symlink target relative to its directory";
+        return false;
+    }
+
+    *target = relative.generic_u8string();
+    if (target->empty())
+        *target = ".";
+    *toDirectory = fs::is_directory(resolved, ec) && !ec;
+    return true;
+}
+
 // Sort key: raw filename bytes. std::string compares as unsigned bytes, which
 // matches "sort by original bytes" and stays stable across platforms.
 struct DirEntry {
     std::string name;
     std::string absolute;
     bool isDirectory {false};
+    bool isSymlink {false};
+    std::string linkTarget;
+    bool linkToDirectory {false};
     uint64_t size {0};
     uint32_t mode {0};
 };
@@ -244,6 +302,23 @@ bool StreamWalker::walk(const std::string &rootPath, const std::string &displayN
             }
 
             const bool isLink = fs::is_symlink(linkStatus);
+            if (isLink && _options.preserveSymlinks) {
+                DirEntry entry;
+                entry.absolute = item.path().u8string();
+                entry.name = item.path().filename().u8string();
+                entry.isSymlink = true;
+                bool outside = false;
+                std::string linkError;
+                if (!preservedLinkTarget(root, item.path(), &entry.linkTarget,
+                                         &entry.linkToDirectory, &outside, &linkError)) {
+                    if (outside)
+                        counters->skippedOutside++;
+                    report(entry.absolute, linkError);
+                    continue;
+                }
+                entries.push_back(std::move(entry));
+                continue;
+            }
             if (isLink && _options.followSymlinks) {
                 std::error_code rootEc;
                 if (!isWithinRoot(root, item.path(), &rootEc)) {
@@ -307,6 +382,16 @@ bool StreamWalker::walk(const std::string &rootPath, const std::string &displayN
             wire.path = relative;
             wire.absolute = entry.absolute;
             wire.mode = entry.mode;
+
+            if (entry.isSymlink) {
+                wire.type = FrameType::Symlink;
+                wire.linkTarget = entry.linkTarget;
+                wire.linkToDirectory = entry.linkToDirectory;
+                counters->symlinks++;
+                if (!onEntry(wire))
+                    return false;
+                continue;
+            }
 
             if (entry.isDirectory) {
                 wire.type = FrameType::Dir;

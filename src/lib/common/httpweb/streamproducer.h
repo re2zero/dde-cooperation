@@ -51,6 +51,7 @@ struct StreamProducerOptions {
 struct StreamProducerStats {
     uint64_t files {0};
     uint64_t directories {0};
+    uint64_t symlinks {0};
     uint64_t bytesRead {0};   // uncompressed bytes read from disk
     uint64_t bytesSent {0};   // bytes handed to the sink, preamble included
     uint64_t frames {0};
