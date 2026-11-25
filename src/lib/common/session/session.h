@@ -20,7 +20,12 @@ enum SessionState {
 class SessionCallInterface : public std::enable_shared_from_this<SessionCallInterface>
 {
 public:
-    virtual void onReceivedMessage(const proto::OriginMessage &request, proto::OriginMessage *response) = 0;
+    // Return false to reject the request. @p remote identifies the connection:
+    // "ip:port" for an accepted server session, the peer IP for a client
+    // session.
+    virtual bool onReceivedMessage(const proto::OriginMessage &request,
+                                   const std::string &remote,
+                                   proto::OriginMessage *response) = 0;
 
     virtual bool onStateChanged(int state, std::string &msg) = 0;
 

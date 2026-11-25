@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2023 UnionTech Software Technology Co., Ltd.
+// SPDX-FileCopyrightText: 2023 - 2026 UnionTech Software Technology Co., Ltd.
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -9,10 +9,12 @@
 #include <QSharedPointer>
 #include <QMutex>
 
-#include <co/time.h>
-#include <co/stl.h>
+#include "common/compatbase.h"
+#include <atomic>
 #include <memory>
 #include <functional>
+#include <ostream>
+#include <tuple>
 
 namespace searchlight {
 
@@ -30,9 +32,9 @@ public:
     * */
     struct service
     {
-        fastring service_name; // the name of the service
-        fastring endpoint; //sockaddr 地址转换成 "ip:port" 形式的字符串
-        fastring info; //json 格式的服务节点信息
+        std::string service_name; // the name of the service
+        std::string endpoint; //sockaddr 地址转换成 "ip:port" 形式的字符串
+        std::string info; //json 格式的服务节点信息
         qint8 flags; // 0是服务器上线，1服务器下线，2信息改变
         int64_t last_seen; //last see time
 
@@ -51,7 +53,7 @@ public:
         }
 
         // this uses "name injection"
-        friend fastream& operator<<(fastream& os, const Discoverer::service& service)
+        friend std::ostream& operator<<(std::ostream& os, const Discoverer::service& service)
         {
             os << service.service_name << " on " << "(" << service.endpoint << "): " <<
                 service.info << " == flags = " << int(service.flags) <<
@@ -66,10 +68,12 @@ public:
     /// this callback gets called, when ever the set of available services changes
     typedef std::function<void(const QList<service>& services)> on_services_changed_t;
 
-    Discoverer(const fastring& listen_for_service, // the service to watch out for
+    Discoverer(const std::string& listen_for_service, // the service to watch out for
                const on_services_changed_t on_services_changed // callback discovered services changes
               );
     ~Discoverer();
+    Discoverer(const Discoverer &) = delete;
+    Discoverer &operator=(const Discoverer &) = delete;
 
     void start();
 
@@ -79,48 +83,46 @@ public:
 
     void setSearchIp(const QString &ip);
 
-    void handle_message(const fastring& message, const fastring& sender_endpoint,
+    void handle_message(const std::string& message, const std::string& sender_endpoint,
                         const bool isFilter = true);
 
 private:
     bool remove_idle_services();
-    void handleChanges(const QString &endpoint, const fastring &info, const qint64 time);
+    void handleChanges(const QString &endpoint, const std::string &info, const qint64 time);
 
-    bool _stop = true;
+    std::atomic_bool _stop { true };
 
-    co::Timer _timer;
-    const fastring _listen_for_service;
+    compat::Timer _timer;
+    const std::string _listen_for_service;
     const on_services_changed_t _on_services_changed;
 
     QReadWriteLock _discovered_lock;
     services _discovered_services;
     QList<service> _change_sevices;
-
-    DISALLOW_COPY_AND_ASSIGN(Discoverer);
 };
 
 
 class __disapi Announcer {
 public:
-    Announcer(const fastring& service_name, // the name of the announced service
+    Announcer(const std::string& service_name, // the name of the announced service
               const uint16_t service_port, // the port where the service listens on
-              const fastring& info // the extend info will be announced
+              const std::string& info // the extend info will be announced
               );
     ~Announcer();
 
     // update the announce info
-    void updateBase(const fastring &info);
+    void updateBase(const std::string &info);
 
-    fastring baseInfo() const;
+    std::string baseInfo() const;
 
     // append app's info
-    void appendApp(const fastring &info);
+    void appendApp(const std::string &info);
 
     // remove app's info
-    void removeApp(const fastring &info);
+    void removeApp(const std::string &info);
 
     // remove app's info by name
-    void removeAppbyName(const fastring &name);
+    void removeAppbyName(const std::string &name);
 
     typedef std::function<void(const QString &ip)> handleTcpDiscover;
     // start announce
@@ -133,24 +135,25 @@ public:
 
     bool finished() const { return _finished; }
 
-    fastring udpSendPackage();
+    std::string udpSendPackage();
 
-    fastring nodeInfoStr();
-
-private:
-    int sameApp(const fastring &info);
+    std::string nodeInfoStr();
 
 private:
-    bool _stop = true;
-    bool _finished = false;
+    int sameApp(const std::string &info);
 
-    const fastring _service_name;
+private:
+    std::atomic_bool _stop { true };
+    std::atomic_bool _finished { false };
+
+    const std::string _service_name;
     const uint16_t _service_port;
 
-    fastring _base_info;
-    co::vector<fastring> _app_infos;
+    std::string _base_info;
+    std::vector<std::string> _app_infos;
 
-    DISALLOW_COPY_AND_ASSIGN(Announcer);
+    Announcer(const Announcer &) = delete;
+    Announcer &operator=(const Announcer &) = delete;
 };
 
 } // searchlight

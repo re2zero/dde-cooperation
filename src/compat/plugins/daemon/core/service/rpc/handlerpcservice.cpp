@@ -1,4 +1,4 @@
-﻿// SPDX-FileCopyrightText: 2023 - 2026 UnionTech Software Technology Co., Ltd.
+// SPDX-FileCopyrightText: 2023 - 2026 UnionTech Software Technology Co., Ltd.
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -6,6 +6,7 @@
 #include "service/ipc/sendipcservice.h"
 #include "sendrpcservice.h"
 #include "service/rpc/remoteservice.h"
+#include "loginsessionmanager.h"
 #include "common/constant.h"
 #include "common/commonstruct.h"
 #include "service/comshare.h"
@@ -24,8 +25,8 @@
 #include <QStandardPaths>
 #include <QUuid>
 
-co::chan<IncomeData> _income_chan(10, 300);
-co::chan<OutData> _outgo_chan(10, 20);
+compat::Channel<IncomeData> _income_chan(10, 300);
+compat::Channel<OutData> _outgo_chan(10, 20);
 HandleRpcService::HandleRpcService(QObject *parent)
     : QObject(parent)
 {
@@ -41,18 +42,12 @@ HandleRpcService::~HandleRpcService()
 {
 }
 
-void HandleRpcService::startRemoteServer()
-{
-    startRemoteServer(UNI_RPC_PORT_BASE);
-    startRemoteServer(UNI_RPC_PORT_TRANS);
-}
-
 void HandleRpcService::handleRpcLogin(bool result, const QString &targetAppname,
                                       const QString &appName, const QString &ip)
 {
     // todo拿到客户端ip，进行消息通讯
     if (result) {
-        SendRpcService::instance()->createRpcSender(appName, ip, UNI_RPC_PORT_BASE);
+        SendRpcService::instance()->createRpcSender(appName, ip, _basePort);
         SendRpcService::instance()->setTargetAppName(appName, targetAppname);
         // 设置为文件传输的连接状态
         Comshare::instance()->updateStatus(CURRENT_STATUS_TRAN_CONNECT);
@@ -68,7 +63,7 @@ void HandleRpcService::handleRpcLogin(bool result, const QString &targetAppname,
     }
 
     //cbConnect {GenericResult}
-    co::Json req = {
+    compat::Json req = {
         { "id", 0 },
         { "result", result ? 1 : 0 },
         { "msg", (ip + " " + appName).toStdString() },
@@ -79,7 +74,7 @@ void HandleRpcService::handleRpcLogin(bool result, const QString &targetAppname,
     SendIpcService::instance()->handleSendToClient(targetAppname, FRONT_CONNECT_CB, jsonData);
 }
 
-bool HandleRpcService::handleRemoteApplyTransFile(co::Json &info)
+bool HandleRpcService::handleRemoteApplyTransFile(compat::Json &info)
 {
     ApplyTransFiles obj;
     obj.from_json(info);
@@ -106,61 +101,83 @@ bool HandleRpcService::handleRemoteApplyTransFile(co::Json &info)
     return true;
 }
 
-bool HandleRpcService::handleRemoteLogin(co::Json &info)
+bool HandleRpcService::handleRemoteLogin(compat::Json &info, const std::string &peerIp)
 {
     UserLoginInfo lo;
     lo.from_json(info);
     UserLoginResultInfo lores;
 
-    std::string version = lo.version.c_str();
+    const QString peer = QString::fromStdString(peerIp.c_str());
+    const std::string version = lo.version.c_str();
+    bool authOK = false;
+    bool countFailure = false;
+    QString errorText;
+
     if (version.compare(UNIAPI_VERSION) != 0) {
-        // Notification not match version
-        lores.result = false;
-        lores.token = "Invalid version";
+        errorText = QStringLiteral("Invalid version");
+    } else if (LoginSessionManager::instance()->isBlocked(peer)) {
+        ELOG << "login blocked for peer:" << peerIp;
+        errorText = QStringLiteral("Too many attempts, try again later");
     } else {
-        bool authOK = false;
-
-        fastring pwd = lo.auth;
+        const std::string pwd = lo.auth;
         if (pwd.empty()) {
-            // TODO: 无认证，用户确认
-            if (DaemonConfig::instance()->needConfirm()) {
-                // 目前还没有处理
-            } else {
+            // v20 cooperation clients do not send a PIN. First contact is
+            // approved by the local user and then remembered per source
+            // address; later contacts are silent.
+            if (DaemonConfig::instance()->isPeerApproved(peer)) {
                 authOK = true;
-            }
-        } else {
-            fastring pass = Util::decodeBase64(pwd.c_str());
-            //            LOG << "pass= " << pass << " getPin=" << DaemonConfig::instance()->getPin();
-            authOK = DaemonConfig::instance()->getPin().compare(pass) == 0;
-        }
-        bool statu = true;//Comshare::instance()->checkTransCanConnect();
-        if (!authOK || !statu) {
-            lores.result = false;
-            lores.token = authOK ? "connect file status error!" : "Invalid auth code";
-        } else {
-            DaemonConfig::instance()->saveRemoteSession(lo.session_id);
-
-            std::string tokenStr = QUuid::createUuid().toString(QUuid::WithoutBraces).toStdString();
-            fastring auth_token = tokenStr.c_str();
-            DaemonConfig::instance()->saveAuthed(auth_token);
-            DaemonConfig::instance()->setTargetName(lo.my_name.c_str());   // save the login name
-            fastring plattsr;
-            if (WINDOWS == Util::getOSType()) {
-                plattsr = "Windows";
             } else {
-                //TODO: other OS
-                plattsr = "UOS";
+                const QString claimed = QString::fromStdString(lo.my_name.c_str());
+                const QString app = QString::fromStdString(lo.selfappName.c_str());
+                authOK = LoginSessionManager::instance()->requestConfirmation(peer, claimed, app, &errorText);
+                countFailure = !authOK;
+                if (authOK)
+                    DaemonConfig::instance()->approvePeer(peer);
             }
+        } else {
+            const std::string pass = Util::decodeBase64(pwd.c_str());
+            const std::string expected = DaemonConfig::instance()->getPin().c_str();
+            authOK = !pass.empty()
+                    && LoginSessionManager::constantTimeEquals(pass.c_str(), expected);
+            countFailure = !authOK;
+            if (!authOK)
+                errorText = QStringLiteral("Invalid auth code");
+        }
+    }
 
-            lores.peer.version = version;
-            lores.peer.hostname = Util::getHostname();
-            lores.peer.platform = plattsr.c_str();
-            lores.peer.username = Util::getUsername();
-            lores.token = auth_token;
-            lores.appName = lo.selfappName;
-            lores.result = authOK;
+    if (countFailure)
+        LoginSessionManager::instance()->recordFailure(peer);
+
+    if (!authOK) {
+        lores.result = false;
+        lores.token = errorText.isEmpty() ? "Invalid auth code" : errorText.toStdString();
+    } else {
+        LoginSessionManager::instance()->recordSuccess(peer);
+
+        DaemonConfig::instance()->saveRemoteSession(lo.session_id);
+
+        std::string tokenStr = QUuid::createUuid().toString(QUuid::WithoutBraces).toStdString();
+        std::string auth_token = tokenStr.c_str();
+        DaemonConfig::instance()->saveAuthed(auth_token);
+        DaemonConfig::instance()->setTargetName(lo.my_name.c_str());   // save the login name
+        std::string plattsr;
+        if (WINDOWS == Util::getOSType()) {
+            plattsr = "Windows";
+        } else {
+            //TODO: other OS
+            plattsr = "UOS";
         }
 
+        lores.peer.version = version;
+        lores.peer.hostname = Util::getHostname();
+        lores.peer.platform = plattsr.c_str();
+        lores.peer.username = Util::getUsername();
+        lores.token = auth_token;
+        lores.appName = lo.selfappName;
+        lores.result = true;
+    }
+
+    if (version.compare(UNIAPI_VERSION) == 0) {
         UserLoginResult result;
         result.appname = lo.appName;
         result.uuid = lo.my_uid;
@@ -169,6 +186,7 @@ bool HandleRpcService::handleRemoteLogin(co::Json &info)
         QString appname(result.appname.c_str());
         handleRpcLogin(result.result, lo.selfappName.c_str(), appname, result.ip.c_str());
     }
+
     OutData data;
     data.type = LOGIN_INFO;
     data.json = lores.as_json().str();
@@ -177,7 +195,7 @@ bool HandleRpcService::handleRemoteLogin(co::Json &info)
     return true;
 }
 
-void HandleRpcService::handleRemoteDisc(co::Json &info)
+void HandleRpcService::handleRemoteDisc(compat::Json &info)
 {
     DLOG_IF(FLG_log_detail) << "handleRemoteDisc: " << info.dbg();
     MiscJsonCall mis;
@@ -188,7 +206,7 @@ void HandleRpcService::handleRemoteDisc(co::Json &info)
     SendIpcService::instance()->handleSendToClient(targetAppname, MISC_MSG, jsonData);
 }
 
-void HandleRpcService::handleRemoteFileBlock(co::Json &info, fastring data)
+void HandleRpcService::handleRemoteFileBlock(compat::Json &info, std::string data)
 {
     FileTransResponse reply;
     auto res = JobManager::instance()->handleFSData(info, data, &reply);
@@ -200,7 +218,7 @@ void HandleRpcService::handleRemoteFileBlock(co::Json &info, fastring data)
     _outgo_chan << out;
 }
 
-void HandleRpcService::handleRemoteReport(co::Json &info)
+void HandleRpcService::handleRemoteReport(compat::Json &info)
 {
     FileTransResponse reply;
     reply.result = OK;
@@ -212,7 +230,7 @@ void HandleRpcService::handleRemoteReport(co::Json &info)
     _outgo_chan << out;
 }
 
-void HandleRpcService::handleRemoteJobCancel(co::Json &info)
+void HandleRpcService::handleRemoteJobCancel(compat::Json &info)
 {
     FileTransResponse reply;
     reply.result = OK;
@@ -225,7 +243,7 @@ void HandleRpcService::handleRemoteJobCancel(co::Json &info)
     _outgo_chan << out;
 }
 
-void HandleRpcService::handleTransJob(co::Json &info)
+void HandleRpcService::handleTransJob(compat::Json &info)
 {
     QString app;
     bool res = false;
@@ -249,14 +267,14 @@ void HandleRpcService::handleTransJob(co::Json &info)
     _outgo_chan << data;
 }
 
-void HandleRpcService::handleRemoteShareConnect(co::Json &info)
+void HandleRpcService::handleRemoteShareConnect(compat::Json &info)
 {
     ShareConnectApply lo;
     lo.from_json(info);
 
     // 这是收到的appname是对方的appname
     SendRpcService::instance()->createRpcSender(lo.tarAppname.c_str(), lo.ip.c_str(),
-                                                UNI_RPC_PORT_BASE);
+                                                _basePort);
     SendRpcService::instance()->setTargetAppName(lo.tarAppname.c_str(),
                                                  lo.appName.c_str());
     // 后端，不是一个进程
@@ -281,7 +299,7 @@ void HandleRpcService::handleRemoteShareConnect(co::Json &info)
     }
     
     // 作为备用检查，尝试从DiscoveryJob获取详细状态信息
-    co::Json baseJson;
+    compat::Json baseJson;
     if (baseJson.parse_from(DiscoveryJob::instance()->baseInfo())) {
         //NodeInfo
         NodePeerInfo nodepeer;
@@ -308,7 +326,7 @@ void HandleRpcService::handleRemoteShareConnect(co::Json &info)
     SendIpcService::instance()->handleSendToClient(targetAppname, FRONT_SHARE_APPLY_CONNECT, jsonMsg);
 }
 
-void HandleRpcService::handleRemoteShareDisConnect(co::Json &info)
+void HandleRpcService::handleRemoteShareDisConnect(compat::Json &info)
 {
     // 发送给前端
     ShareDisConnect sd;
@@ -322,7 +340,7 @@ void HandleRpcService::handleRemoteShareDisConnect(co::Json &info)
     SendIpcService::instance()->handleSendToClient(targetAppname, FRONT_SHARE_DISCONNECT, jsonMsg);
 }
 
-void HandleRpcService::handleRemoteShareConnectReply(co::Json &info)
+void HandleRpcService::handleRemoteShareConnectReply(compat::Json &info)
 {
     ShareConnectReply reply;
     reply.from_json(info);
@@ -339,7 +357,7 @@ void HandleRpcService::handleRemoteShareConnectReply(co::Json &info)
     SendIpcService::instance()->handleSendToClient(targetAppname, FRONT_SHARE_APPLY_CONNECT_REPLY, jsonMsg);
 }
 
-void HandleRpcService::handleRemoteShareStart(co::Json &info)
+void HandleRpcService::handleRemoteShareStart(compat::Json &info)
 {
     Comshare::instance()->updateStatus(CURRENT_STATUS_SHARE_START);
     ShareStart st;
@@ -363,7 +381,7 @@ void HandleRpcService::handleRemoteShareStart(co::Json &info)
     SendIpcService::instance()->handleSendToClient(targetAppname, FRONT_SHARE_START_REPLY, jsonMsg);
 }
 
-void HandleRpcService::handleRemoteShareStartRes(co::Json &info)
+void HandleRpcService::handleRemoteShareStartRes(compat::Json &info)
 {
     ShareStartRmoteReply rreply;
     rreply.from_json(info);
@@ -381,7 +399,7 @@ void HandleRpcService::handleRemoteShareStartRes(co::Json &info)
     SendIpcService::instance()->handleSendToClient(targetAppname, SHARE_START_RES, jsonMsg);
 }
 
-void HandleRpcService::handleRemoteShareStop(co::Json &info)
+void HandleRpcService::handleRemoteShareStop(compat::Json &info)
 {
     Comshare::instance()->updateStatus(CURRENT_STATUS_DISCONNECT);
     ShareStop st;
@@ -393,7 +411,7 @@ void HandleRpcService::handleRemoteShareStop(co::Json &info)
     SendIpcService::instance()->handleSendToClient(targetAppname, FRONT_SHARE_STOP, jsonMsg);
 }
 
-void HandleRpcService::handleRemoteDisConnectCb(co::Json &info)
+void HandleRpcService::handleRemoteDisConnectCb(compat::Json &info)
 {
     Comshare::instance()->updateStatus(CURRENT_STATUS_DISCONNECT);
     // 发送给前端
@@ -408,7 +426,7 @@ void HandleRpcService::handleRemoteDisConnectCb(co::Json &info)
     SendRpcService::instance()->removePing(sd.tarAppname.c_str());
 }
 
-void HandleRpcService::handleRemotePing(co::Json &info)
+void HandleRpcService::handleRemotePing(compat::Json &info)
 {
     PingPong pingjson;
     pingjson.from_json(info);
@@ -429,7 +447,7 @@ void HandleRpcService::handleRemotePing(co::Json &info)
     SendIpcService::instance()->cancelOfflineStatus(appName);
 }
 
-void HandleRpcService::handleRemoteDisApplyShareConnect(co::Json &info)
+void HandleRpcService::handleRemoteDisApplyShareConnect(compat::Json &info)
 {
     Comshare::instance()->updateStatus(CURRENT_STATUS_DISCONNECT);
     // 发送给前端
@@ -449,22 +467,54 @@ bool HandleRpcService::checkConnected()
     return _rpc->checkConneted() || _rpc_trans->checkConneted();
 }
 
-void HandleRpcService::handleRemoteSearchIp(co::Json &info)
+static void redactPeerInfoJson(compat::Json &node)
+{
+    if (!node.is_object())
+        return;
+    if (node.has_member("os")) {
+        // Keep the member in place: a view returned by get() points into the
+        // parent value, so removing the member first would invalidate the view.
+        compat::Json os = node.get("os");
+        if (os.is_object()) {
+            os.remove("username");
+            os.remove("hostname");
+        }
+    }
+    if (node.has_member("info")) {
+        compat::Json info = node.get("info");
+        if (info.is_object()) {
+            redactPeerInfoJson(info);
+        }
+    }
+}
+
+static std::string redactPeerInfo(const std::string &json)
+{
+    compat::Json node;
+    if (!node.parse_from(json))
+        return json;
+    redactPeerInfoJson(node);
+    return node.str();
+}
+
+void HandleRpcService::handleRemoteSearchIp(compat::Json &info, bool authenticated)
 {
     Q_UNUSED(info);
     OutData data;
     data.type = SEARCH_DEVICE_BY_IP;
-    data.json = DiscoveryJob::instance()->nodeInfoStr();
+    data.json = authenticated ? DiscoveryJob::instance()->nodeInfoStr()
+                              : redactPeerInfo(DiscoveryJob::instance()->nodeInfoStr());
     _outgo_chan << data;
 }
 
-void HandleRpcService::hanldeRemoteDiscover(co::Json &info)
+void HandleRpcService::hanldeRemoteDiscover(compat::Json &info, bool authenticated)
 {
     DiscoverInfo dis, res;
     OutData data;
     data.type = DISCOVER_BY_TCP;
     res.ip = Util::getFirstIp();
-    res.msg = DiscoveryJob::instance()->udpSendPackage();
+    res.msg = authenticated ? DiscoveryJob::instance()->udpSendPackage()
+                            : redactPeerInfo(DiscoveryJob::instance()->udpSendPackage());
     data.json = res.as_json().str();
     _outgo_chan << data;
 
@@ -479,7 +529,7 @@ void HandleRpcService::handleOffline(const QString ip)
         QString remoteip = it.value();
         if (ip.compare(remoteip) == 0) {
             QString appname = it.key();
-            fastring msg = co::Json({{"ip", remoteip.toStdString()}, {"appName", appname.toStdString()}}).str();
+            std::string msg = compat::Json({{"ip", remoteip.toStdString()}, {"appName", appname.toStdString()}}).str();
             ELOG << "connection offline: " << appname.toStdString() << " ip:" << remoteip.toStdString();
             SendIpcService::instance()->preprocessOfflineStatus(appname, CONNCB_TIMEOUT, msg);
             // 移除ping记录
@@ -490,40 +540,41 @@ void HandleRpcService::handleOffline(const QString ip)
     }
 }
 
-void HandleRpcService::startRemoteServer(const quint16 port)
+void HandleRpcService::startRemoteServer(quint16 basePort, quint16 transPort)
 {
-    if (_rpc.isNull() && port != UNI_RPC_PORT_TRANS)
-        return;
-    if (_rpc_trans.isNull() && port == UNI_RPC_PORT_TRANS)
-        return;
-    auto rpc = port != UNI_RPC_PORT_TRANS ? _rpc : _rpc_trans;
+    _basePort = basePort == 0 ? UNI_RPC_PORT_BASE : basePort;
+    const quint16 resolvedTrans = transPort == 0 ? UNI_RPC_PORT_TRANS : transPort;
+    startListen(_basePort, false);
+    startListen(resolvedTrans, true);
+    startDispatchLoop();
+}
+
+void HandleRpcService::startListen(const quint16 port, bool trans)
+{
+    auto rpc = trans ? _rpc_trans : _rpc;
     auto configDir = QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation).toStdString();
     SslCertConf::ins()->generateCertificate(configDir);
-    fastring certfile = SslCertConf::ins()->getCertificatePath().c_str();
-    QPointer<HandleRpcService> my = this;
-    auto callback = [my](const int type, const fastring &ip, const uint16 port){
-        if (type < 0) {
-            ELOG << "connection callback offline: " << ip << ":" << port;
-            if (!my.isNull()) {
-                QString remoteip = QString(ip.c_str());
-                my->handleOffline(remoteip);
-            }
-        }
+    std::string certfile = SslCertConf::ins()->getCertificatePath().c_str();
+    QPointer<HandleRpcService> self = this;
+    auto callback = [self](const int type, const std::string &ip, const uint16 port) {
+        if (type < 0 && !self.isNull())
+            self->handleOffline(QString(ip.c_str()));
     };
-    if (port == UNI_RPC_PORT_TRANS) {
-        rpc->startRpcListen(certfile.c_str(), certfile.c_str(), port, callback);
-    } else {
-        rpc->startRpcListen(certfile.c_str(), certfile.c_str(), port);
-    }
+    rpc->startRpcListen(certfile.c_str(), certfile.c_str(), port, callback);
+}
 
+void HandleRpcService::startDispatchLoop()
+{
     QPointer<HandleRpcService> self = this;
     UNIGO([self]() {
-        // 这里已经是线程或者协程
+        // Authentication is per source address. LOGIN and the two discovery
+        // probes are the only types a peer may send before logging in; the
+        // discovery probes answer with redacted device information when the
+        // source is not authenticated yet.
         static const auto requiresAuth = [](int type) -> bool {
             switch (type) {
             case LOGIN_INFO:
             case LOGIN_RESULT:
-            case RPC_PING:
             case SEARCH_DEVICE_BY_IP:
             case DISCOVER_BY_TCP:
                 return false;
@@ -539,16 +590,20 @@ void HandleRpcService::startRemoteServer(const quint16 port)
                 // timeout, next read
                 continue;
             }
-            LOG_IF(FLG_log_detail) << ">> get chan value: " << indata.type << " json:" << indata.json;
-            co::Json json_obj = json::parse(indata.json);
-            if (json_obj.is_null()) {
+            LOG_IF(FLG_log_detail) << ">> get chan value: " << indata.type
+                                   << " peer:" << indata.peer_ip
+                                   << " json:" << indata.json;
+            compat::Json json_obj;
+            if (!json_obj.parse_from(indata.json)) {
                 ELOG << "parse error from: " << indata.json;
                 continue;
             }
 
-            if (requiresAuth(indata.type)
-                && DaemonConfig::instance()->getAuthed().empty()) {
-                ELOG << "auth required but not logged in, drop message type=" << indata.type;
+            const QString peer = QString::fromStdString(indata.peer_ip.c_str());
+            const bool authed = LoginSessionManager::instance()->isAuthenticated(peer);
+            if (requiresAuth(indata.type) && !authed) {
+                ELOG << "auth required but not logged in, drop message type=" << indata.type
+                     << " peer=" << indata.peer_ip;
                 OutData data;
                 data.type = UNKOWN;
                 _outgo_chan << data;
@@ -558,7 +613,7 @@ void HandleRpcService::startRemoteServer(const quint16 port)
             switch (indata.type) {
             case LOGIN_INFO:
             {
-                self->handleRemoteLogin(json_obj);
+                self->handleRemoteLogin(json_obj, indata.peer_ip);
                 break;
             }
             case LOGIN_CONFIRM:
@@ -693,13 +748,13 @@ void HandleRpcService::startRemoteServer(const quint16 port)
             case SEARCH_DEVICE_BY_IP:
             {
                 if (self)
-                    self->handleRemoteSearchIp(json_obj);
+                    self->handleRemoteSearchIp(json_obj, authed);
                 break;
             }
             case DISCOVER_BY_TCP:
             {
                 if (self)
-                    self->hanldeRemoteDiscover(json_obj);
+                    self->hanldeRemoteDiscover(json_obj, authed);
                 break;
             }
             default:{
@@ -722,7 +777,7 @@ void HandleRpcService::handleTimeOut()
         if (count > 3) {
             // 通知客户端连接超时
             ELOG << "timeout: remote server disconnect: " << key.toStdString();
-            fastring msg = co::Json({{"app", key.toStdString()}, {"offline", true}}).str();
+            std::string msg = compat::Json({{"app", key.toStdString()}, {"offline", true}}).str();
             SendIpcService::instance()->preprocessOfflineStatus(key, NOPING_TIMEOUT, msg);
             continue;
         }

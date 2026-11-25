@@ -1,4 +1,4 @@
-﻿// SPDX-FileCopyrightText: 2023 UnionTech Software Technology Co., Ltd.
+// SPDX-FileCopyrightText: 2023 - 2026 UnionTech Software Technology Co., Ltd.
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -9,10 +9,18 @@
 #include <QReadWriteLock>
 #include <QMap>
 
+#include <memory>
+
 #include "message.pb.h"
 #include "common/commonstruct.h"
-#include "zrpc.h"
+#include "compatrpcclient.h"
 #include <ipc/proto/chan.h>
+
+namespace compat_rpc {
+class CompatRpcServer;
+}
+
+namespace NetUtil { namespace Asio { class Service; class SSLContext; } }
 
 class RemoteServiceImpl : public RemoteService
 {
@@ -26,38 +34,6 @@ public:
                            ::google::protobuf::Closure* done) override;
 
 };
-
-class ZRpcClientExecutor
-{
-public:
-    ZRpcClientExecutor(const char *targetip, uint16_t port, const bool isLong)
-        : ip(targetip)
-        , port(port)
-    {
-        _client = new zrpc_ns::ZRpcClient(targetip, port, true, isLong);
-    }
-
-    ~ZRpcClientExecutor() {
-        if (_client) {
-            _client->getControler()->Reset();
-            delete _client;
-        }
-    }
-
-    zrpc_ns::ZRpcChannel *chan() { return _client->getChannel(); }
-
-    zrpc_ns::ZRpcController *control() { return _client->getControler(); }
-
-    QString targetIP() { return ip; }
-
-    uint16_t targetPort() { return port; }
-
-private:
-    zrpc_ns::ZRpcClient *_client{ nullptr };
-    QString ip;
-    uint16_t port;
-};
-
 
 class RemoteServiceSender : public QObject
 {
@@ -78,8 +54,8 @@ public:
     QString targetAppname() const { return  _tar_app_name;}
     QString remoteIP() const { return _target_ip; }
     uint16 remotePort() const {return _target_port; }
-    QSharedPointer<ZRpcClientExecutor> createExecutor();
-    QSharedPointer<ZRpcClientExecutor> createTransExecutor();
+    QSharedPointer<compat_rpc::CompatRpcExecutor> createExecutor();
+    QSharedPointer<compat_rpc::CompatRpcExecutor> createTransExecutor();
     void clearLongExecutor();
 
 private:
@@ -95,13 +71,14 @@ class RemoteServiceBinder : public QObject {
     Q_OBJECT
 public:
     explicit RemoteServiceBinder(QObject *parent = nullptr);
-    ~RemoteServiceBinder() override = default;
+    ~RemoteServiceBinder() override;
     void startRpcListen(const char *keypath, const char *crtpath, const quint16 port,
-                        const std::function<void(int, const fastring &, const uint16)> &call = nullptr);
+                        const std::function<void(int, const std::string &, const uint16)> &call = nullptr);
     bool checkConneted();
 private:
-    std::function<void(int, const fastring &, const uint16)> callback{ nullptr };
-    zrpc_ns::ZRpcServer *server{nullptr};
+    std::function<void(int, const std::string &, const uint16)> callback{ nullptr };
+    std::shared_ptr<compat_rpc::CompatRpcServer> server;
+    std::shared_ptr<NetUtil::Asio::SSLContext> _context;
 };
 
 #endif   // REMOTE_SERVICE_H

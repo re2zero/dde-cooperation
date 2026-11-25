@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2023 UnionTech Software Technology Co., Ltd.
+// SPDX-FileCopyrightText: 2023 - 2026 UnionTech Software Technology Co., Ltd.
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -7,7 +7,7 @@
 
 #include <QObject>
 #include <QReadWriteLock>
-#include <co/stl.h>
+#include "common/compatbase.h"
 #include <QMutex>
 
 class DiscoveryJob : public QObject
@@ -15,17 +15,17 @@ class DiscoveryJob : public QObject
     Q_OBJECT
 public:
     void discovererRun();
-    void announcerRun(const fastring &info);
+    void announcerRun(const std::string &info);
     void stopDiscoverer();
     void stopAnnouncer();
 
-    void updateAnnouncBase(const fastring info);
-    void updateAnnouncApp(bool remove, const fastring info);
-    void updateAnnouncShare(const bool remove, const fastring connectIP = "");
-    void removeAppbyName(const fastring name);
-    fastring baseInfo() const;
+    void updateAnnouncBase(const std::string info);
+    void updateAnnouncApp(bool remove, const std::string info);
+    void updateAnnouncShare(const bool remove, const std::string connectIP = "");
+    void removeAppbyName(const std::string name);
+    std::string baseInfo() const;
 
-    co::list<fastring> getNodes();
+    std::list<std::string> getNodes();
 
     static DiscoveryJob *instance()
     {
@@ -35,9 +35,9 @@ public:
 
     void searchDeviceByIp(const QString &ip, const bool remove);
 
-    fastring udpSendPackage();
+    std::string udpSendPackage();
 
-    fastring nodeInfoStr();
+    std::string nodeInfoStr();
 
     void handleUpdPackage(const QString &ip, const QString &msg);
 
@@ -45,10 +45,10 @@ signals:
     void sigNodeChanged(bool found, QString info);
 
 private:
-    void compareOldAndNew(const fastring &uid, const QString &cur,
-                          const co::lru_map<fastring, std::pair<fastring, bool>>::iterator &it);
+    void compareOldAndNew(const std::string &uid, const QString &cur,
+                          const compat::LruMap<std::string, std::pair<std::string, bool>>::iterator &it);
 
-    void notifySearchResult(bool result, const fastring &info);
+    void notifySearchResult(bool result, const std::string &info);
 
 private:
     explicit DiscoveryJob(QObject *parent = nullptr);
@@ -58,7 +58,7 @@ private:
 
     //<uuid, <peerinfo, exist>>
     QReadWriteLock _dis_lock;
-    co::lru_map<fastring, std::pair<fastring, bool>> _dis_node_maps;
+    compat::LruMap<std::string, std::pair<std::string, bool>> _dis_node_maps;
     mutable QMutex _lock;
 };
 

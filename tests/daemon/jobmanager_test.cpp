@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2026 UnionTech Software Technology Co., Ltd.
+// SPDX-FileCopyrightText: 2026 - 2026 UnionTech Software Technology Co., Ltd.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include <gtest/gtest.h>
@@ -10,7 +10,7 @@
 #include "common/commonstruct.h"
 #include "ipc/proto/chan.h"
 #include "common/constant.h"
-#include "co/json.h"
+#include "common/compatbase.h"
 
 #include <QTemporaryDir>
 #include <QSharedPointer>
@@ -86,7 +86,7 @@ TEST(JobManagerTest, HandleRemoteRequestJobInvalidJson)
 TEST(JobManagerTest, HandleTransReportUnknownResult)
 {
     JobManager *jm = JobManager::instance();
-    co::Json info;
+    compat::Json info;
     info.parse_from(R"({"job_id":555,"path":"/tmp/x","result":999,"error":""})");
     FileTransResponse reply;
     // result=999 falls into default branch -> returns true.
@@ -97,7 +97,7 @@ TEST(JobManagerTest, HandleTransReportUnknownResult)
 TEST(JobManagerTest, HandleTransReportOk)
 {
     JobManager *jm = JobManager::instance();
-    co::Json info;
+    compat::Json info;
     info.parse_from(R"({"job_id":777,"path":"/tmp/ok","result":1,"error":""})");
     FileTransResponse reply;
     // OK (1) branch -> returns true.
@@ -108,7 +108,7 @@ TEST(JobManagerTest, HandleTransReportOk)
 TEST(JobManagerTest, HandleCancelJobNoJob)
 {
     JobManager *jm = JobManager::instance();
-    co::Json info;
+    compat::Json info;
     info.parse_from(R"({"job_id":888,"appname":"app","type":1})");
     FileTransResponse reply;
     // No matching recv/send job -> returns false.
@@ -145,9 +145,9 @@ TEST(JobManagerTest, HandleFSDataNoJob)
     JobManager *jm = JobManager::instance();
     FSDataBlock db;
     db.job_id = 4242;
-    co::Json info = db.as_json();
+    compat::Json info = db.as_json();
     FileTransResponse reply;
-    EXPECT_FALSE(jm->handleFSData(info, fastring("data"), &reply));
+    EXPECT_FALSE(jm->handleFSData(info, std::string("data"), &reply));
 }
 
 TEST(JobManagerTest, HandleFSDataWithRecvJob)
@@ -163,9 +163,9 @@ TEST(JobManagerTest, HandleFSDataWithRecvJob)
     db.job_id = jobId;
     db.file_id = 1;
     db.flags = JobTransFileOp::FIlE_CREATE;
-    co::Json info = db.as_json();
+    compat::Json info = db.as_json();
     FileTransResponse reply;
-    bool res = jm->handleFSData(info, fastring(""), &reply);
+    bool res = jm->handleFSData(info, std::string(""), &reply);
     EXPECT_TRUE(res);
 
     // reply populated
@@ -186,9 +186,9 @@ TEST(JobManagerTest, HandleFSDataCountedNoSpace)
     db.job_id = jobId;
     db.flags = JobTransFileOp::FILE_COUNTED;
     db.data_size = 100;
-    co::Json info = db.as_json();
+    compat::Json info = db.as_json();
     FileTransResponse reply;
-    EXPECT_FALSE(jm->handleFSData(info, fastring(""), &reply));
+    EXPECT_FALSE(jm->handleFSData(info, std::string(""), &reply));
     jm->_transjob_recvs.remove(jobId);
 }
 
@@ -204,7 +204,7 @@ TEST(JobManagerTest, HandleCancelJobWithRecvJob)
     act.job_id = jobId;
     act.appname = "cancelapp";
     act.type = TRANS_CANCEL;
-    co::Json info = act.as_json();
+    compat::Json info = act.as_json();
     FileTransResponse reply;
     bool res = jm->handleCancelJob(info, &reply);
     EXPECT_TRUE(res);
@@ -223,7 +223,7 @@ TEST(JobManagerTest, HandleCancelJobWithSendJob)
     act.job_id = jobId;
     act.appname = "sendapp";
     act.type = TRANS_CANCEL;
-    co::Json info = act.as_json();
+    compat::Json info = act.as_json();
     FileTransResponse reply;
     bool res = jm->handleCancelJob(info, &reply);
     EXPECT_TRUE(res);
@@ -241,7 +241,7 @@ TEST(JobManagerTest, HandleTransReportIOError)
     FSReport rep;
     rep.job_id = jobId;
     rep.result = IO_ERROR;
-    co::Json info = rep.as_json();
+    compat::Json info = rep.as_json();
     FileTransResponse reply;
     EXPECT_TRUE(jm->handleTransReport(info, &reply));
     // job moved to _transjob_break
@@ -254,7 +254,7 @@ TEST(JobManagerTest, HandleTransReportFinishNoJob)
     FSReport rep;
     rep.job_id = 9999;
     rep.result = FINIASH;
-    co::Json info = rep.as_json();
+    compat::Json info = rep.as_json();
     FileTransResponse reply;
     EXPECT_FALSE(jm->handleTransReport(info, &reply));
 }

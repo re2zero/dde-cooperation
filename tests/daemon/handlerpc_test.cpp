@@ -1,8 +1,9 @@
-// SPDX-FileCopyrightText: 2026 UnionTech Software Technology Co., Ltd.
+// SPDX-FileCopyrightText: 2026 - 2026 UnionTech Software Technology Co., Ltd.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include <gtest/gtest.h>
 #include "service/rpc/handlerpcservice.h"
+#include "service/rpc/loginsessionmanager.h"
 #include "service/discoveryjob.h"
 #include "service/comshare.h"
 #include "common/commonstruct.h"
@@ -13,16 +14,16 @@
 #include "utils/config.h"
 #include "utils/utils.h"
 #include "protocol/version.h"
-#include "co/json.h"
+#include "common/compatbase.h"
 #include "stub.h"
 
 // Stubs for DiscoveryJob methods that deref null _announcer_p / _discoverer_p.
-static fastring fakeBaseInfo() { return fastring(); }
-static fastring fakeUdpSendPackage() { return fastring(); }
-static fastring fakeNodeInfoStr() { return fastring(); }
+static std::string fakeBaseInfo() { return std::string(); }
+static std::string fakeUdpSendPackage() { return std::string(); }
+static std::string fakeNodeInfoStr() { return std::string(); }
 static void fakeHandleUpdPackage(const QString &, const QString &) {}
-static void fakeUpdateAnnouncShare(const bool, const fastring) {}
-static void fakeUpdateAnnouncApp(bool, const fastring) {}
+static void fakeUpdateAnnouncShare(const bool, const std::string) {}
+static void fakeUpdateAnnouncApp(bool, const std::string) {}
 
 static void installDiscoveryStubs(Stub &stub)
 {
@@ -68,7 +69,7 @@ TEST(HandleRpcServiceTest, HandleRemoteApplyTransFileApply)
     info.appname = "app";
     info.tarAppname = "target";
     info.type = APPLY_TRANS_APPLY;
-    co::Json json = info.as_json();
+    compat::Json json = info.as_json();
     EXPECT_TRUE(svc.handleRemoteApplyTransFile(json));
 }
 
@@ -79,7 +80,7 @@ TEST(HandleRpcServiceTest, HandleRemoteApplyTransFileConfirm)
     info.appname = "app";
     info.tarAppname = "target";
     info.type = APPLY_TRANS_CONFIRM;
-    co::Json json = info.as_json();
+    compat::Json json = info.as_json();
     EXPECT_TRUE(svc.handleRemoteApplyTransFile(json));
 }
 
@@ -91,8 +92,10 @@ TEST(HandleRpcServiceTest, HandleRemoteLoginWrongVersion)
     lo.appName = "app";
     lo.selfappName = "self";
     lo.auth = "";
-    co::Json json = lo.as_json();
-    EXPECT_TRUE(svc.handleRemoteLogin(json));
+    compat::Json json = lo.as_json();
+    DaemonConfig::instance()->saveAuthed("");
+    EXPECT_TRUE(svc.handleRemoteLogin(json, std::string("10.0.0.1")));
+    EXPECT_TRUE(DaemonConfig::instance()->getAuthed().empty());
 }
 
 TEST(HandleRpcServiceTest, HandleRemoteLoginValidAuth)
@@ -108,8 +111,15 @@ TEST(HandleRpcServiceTest, HandleRemoteLoginValidAuth)
     lo.session_id = "sess";
     lo.ip = "1.2.3.4";
     lo.auth = Util::encodeBase64("123456").c_str();
-    co::Json json = lo.as_json();
-    EXPECT_TRUE(svc.handleRemoteLogin(json));
+    compat::Json json = lo.as_json();
+    DaemonConfig::instance()->saveAuthed("");
+    LoginSessionManager::instance()->logout("10.0.0.2");
+    EXPECT_TRUE(svc.handleRemoteLogin(json, std::string("10.0.0.2")));
+    EXPECT_FALSE(DaemonConfig::instance()->getAuthed().empty());
+    EXPECT_TRUE(LoginSessionManager::instance()->isAuthenticated("10.0.0.2"));
+    // The session is bound to the source address, not to the process.
+    EXPECT_FALSE(LoginSessionManager::instance()->isAuthenticated("10.0.0.99"));
+    LoginSessionManager::instance()->logout("10.0.0.2");
     Comshare::instance()->updateStatus(CURRENT_STATUS_DISCONNECT);
 }
 
@@ -122,20 +132,51 @@ TEST(HandleRpcServiceTest, HandleRemoteLoginBadAuth)
     lo.appName = "app";
     lo.selfappName = "self";
     lo.auth = Util::encodeBase64("wrong").c_str();
-    co::Json json = lo.as_json();
-    EXPECT_TRUE(svc.handleRemoteLogin(json));
+    compat::Json json = lo.as_json();
+    DaemonConfig::instance()->saveAuthed("");
+    EXPECT_TRUE(svc.handleRemoteLogin(json, std::string("10.0.0.3")));
+    EXPECT_TRUE(DaemonConfig::instance()->getAuthed().empty());
+    EXPECT_FALSE(LoginSessionManager::instance()->isAuthenticated("10.0.0.3"));
 }
 
 TEST(HandleRpcServiceTest, HandleRemoteLoginNoAuthNoConfirm)
 {
     HandleRpcService svc;
+    DaemonConfig::instance()->removeApprovedPeer("10.0.0.4");
+    LoginSessionManager::instance()->setConfirmationTimeoutMs(0);
     UserLoginInfo lo;
     lo.version = UNIAPI_VERSION;
     lo.appName = "app";
     lo.selfappName = "self";
     lo.auth = "";
-    co::Json json = lo.as_json();
-    EXPECT_TRUE(svc.handleRemoteLogin(json));
+    compat::Json json = lo.as_json();
+    DaemonConfig::instance()->saveAuthed("");
+    EXPECT_TRUE(svc.handleRemoteLogin(json, std::string("10.0.0.4")));
+    EXPECT_TRUE(DaemonConfig::instance()->getAuthed().empty());
+    EXPECT_FALSE(LoginSessionManager::instance()->isAuthenticated("10.0.0.4"));
+    LoginSessionManager::instance()->setConfirmationTimeoutMs(LOGIN_CONFIRM_TIMEOUT);
+}
+
+TEST(HandleRpcServiceTest, HandleRemoteLoginEmptyAuthApprovedPeer)
+{
+    HandleRpcService svc;
+    DaemonConfig::instance()->approvePeer("10.0.0.5");
+    UserLoginInfo lo;
+    lo.version = UNIAPI_VERSION;
+    lo.appName = "app";
+    lo.selfappName = "self";
+    lo.my_name = "legacy-peer";
+    lo.my_uid = "uid";
+    lo.session_id = "sess";
+    lo.ip = "10.0.0.5";
+    lo.auth = "";
+    compat::Json json = lo.as_json();
+    DaemonConfig::instance()->saveAuthed("");
+    EXPECT_TRUE(svc.handleRemoteLogin(json, std::string("10.0.0.5")));
+    EXPECT_FALSE(DaemonConfig::instance()->getAuthed().empty());
+    EXPECT_TRUE(LoginSessionManager::instance()->isAuthenticated("10.0.0.5"));
+    LoginSessionManager::instance()->logout("10.0.0.5");
+    DaemonConfig::instance()->removeApprovedPeer("10.0.0.5");
 }
 
 TEST(HandleRpcServiceTest, HandleRemoteDisc)
@@ -144,7 +185,7 @@ TEST(HandleRpcServiceTest, HandleRemoteDisc)
     MiscJsonCall mis;
     mis.app = "app";
     mis.json = "{}";
-    co::Json json = mis.as_json();
+    compat::Json json = mis.as_json();
     svc.handleRemoteDisc(json);
     SUCCEED();
 }
@@ -154,8 +195,8 @@ TEST(HandleRpcServiceTest, HandleRemoteFileBlock)
     HandleRpcService svc;
     FSDataBlock db;
     db.job_id = 1;
-    co::Json json = db.as_json();
-    svc.handleRemoteFileBlock(json, fastring(""));
+    compat::Json json = db.as_json();
+    svc.handleRemoteFileBlock(json, std::string(""));
     SUCCEED();
 }
 
@@ -165,7 +206,7 @@ TEST(HandleRpcServiceTest, HandleRemoteReport)
     FSReport rep;
     rep.job_id = 1;
     rep.result = OK;
-    co::Json json = rep.as_json();
+    compat::Json json = rep.as_json();
     svc.handleRemoteReport(json);
     SUCCEED();
 }
@@ -176,7 +217,7 @@ TEST(HandleRpcServiceTest, HandleRemoteReportIOError)
     FSReport rep;
     rep.job_id = 1;
     rep.result = IO_ERROR;
-    co::Json json = rep.as_json();
+    compat::Json json = rep.as_json();
     svc.handleRemoteReport(json);
     SUCCEED();
 }
@@ -188,7 +229,7 @@ TEST(HandleRpcServiceTest, HandleRemoteJobCancel)
     act.job_id = 1;
     act.appname = "app";
     act.type = TRANS_CANCEL;
-    co::Json json = act.as_json();
+    compat::Json json = act.as_json();
     svc.handleRemoteJobCancel(json);
     SUCCEED();
 }
@@ -200,7 +241,7 @@ TEST(HandleRpcServiceTest, HandleTransJobWriteNotConfirmed)
     job.job_id = 1;
     job.write = true;
     job.app_who = "app";
-    co::Json json = job.as_json();
+    compat::Json json = job.as_json();
     svc.handleTransJob(json);
     SUCCEED();
 }
@@ -217,7 +258,7 @@ TEST(HandleRpcServiceTest, HandleRemoteShareConnectNotCooperating)
     lo.tarIp = "1.2.3.4";
     lo.ip = "1.2.3.4";
     lo.data = "data";
-    co::Json json = lo.as_json();
+    compat::Json json = lo.as_json();
     svc.handleRemoteShareConnect(json);
     SUCCEED();
 }
@@ -232,7 +273,7 @@ TEST(HandleRpcServiceTest, HandleRemoteShareConnectWhileCooperating)
     lo.appName = "app";
     lo.tarAppname = "target";
     lo.tarIp = "1.2.3.4";
-    co::Json json = lo.as_json();
+    compat::Json json = lo.as_json();
     svc.handleRemoteShareConnect(json);
     Comshare::instance()->updateStatus(CURRENT_STATUS_DISCONNECT);
 }
@@ -246,7 +287,7 @@ TEST(HandleRpcServiceTest, HandleRemoteShareDisConnect)
     sd.appName = "app";
     sd.tarAppname = "target";
     sd.msg = "bye";
-    co::Json json = sd.as_json();
+    compat::Json json = sd.as_json();
     svc.handleRemoteShareDisConnect(json);
     SUCCEED();
 }
@@ -261,7 +302,7 @@ TEST(HandleRpcServiceTest, HandleRemoteShareConnectReplyConfirm)
     rep.tarAppname = "target";
     rep.reply = SHARE_CONNECT_COMFIRM;
     rep.ip = "1.2.3.4";
-    co::Json json = rep.as_json();
+    compat::Json json = rep.as_json();
     svc.handleRemoteShareConnectReply(json);
     SUCCEED();
 }
@@ -273,7 +314,7 @@ TEST(HandleRpcServiceTest, HandleRemoteShareConnectReplyRefuse)
     rep.appName = "app";
     rep.tarAppname = "target";
     rep.reply = SHARE_CONNECT_REFUSE;
-    co::Json json = rep.as_json();
+    compat::Json json = rep.as_json();
     svc.handleRemoteShareConnectReply(json);
     SUCCEED();
 }
@@ -286,7 +327,7 @@ TEST(HandleRpcServiceTest, HandleRemoteShareStart)
     st.tarAppname = "target";
     st.ip = "1.2.3.4";
     st.port = 24802;
-    co::Json json = st.as_json();
+    compat::Json json = st.as_json();
     svc.handleRemoteShareStart(json);
     SUCCEED();
 }
@@ -297,7 +338,7 @@ TEST(HandleRpcServiceTest, HandleRemoteShareStartRes)
     ShareStartRmoteReply r;
     r.result = true;
     r.tarAppname = "target";
-    co::Json json = r.as_json();
+    compat::Json json = r.as_json();
     svc.handleRemoteShareStartRes(json);
     SUCCEED();
 }
@@ -309,7 +350,7 @@ TEST(HandleRpcServiceTest, HandleRemoteShareStartResFail)
     r.result = false;
     r.tarAppname = "target";
     r.errorMsg = "err";
-    co::Json json = r.as_json();
+    compat::Json json = r.as_json();
     svc.handleRemoteShareStartRes(json);
     SUCCEED();
 }
@@ -321,7 +362,7 @@ TEST(HandleRpcServiceTest, HandleRemoteShareStop)
     st.appName = "app";
     st.tarAppname = "target";
     st.flags = SHARE_STOP_ALL;
-    co::Json json = st.as_json();
+    compat::Json json = st.as_json();
     svc.handleRemoteShareStop(json);
     SUCCEED();
 }
@@ -332,7 +373,7 @@ TEST(HandleRpcServiceTest, HandleRemoteDisConnectCb)
     ShareDisConnect sd;
     sd.appName = "app";
     sd.tarAppname = "target";
-    co::Json json = sd.as_json();
+    compat::Json json = sd.as_json();
     svc.handleRemoteDisConnectCb(json);
     SUCCEED();
 }
@@ -343,7 +384,7 @@ TEST(HandleRpcServiceTest, HandleRemotePingSearchPing)
     PingPong pp;
     pp.appName = "app";
     pp.ip = "search-ping";
-    co::Json json = pp.as_json();
+    compat::Json json = pp.as_json();
     svc.handleRemotePing(json);
     SUCCEED();
 }
@@ -354,7 +395,7 @@ TEST(HandleRpcServiceTest, HandleRemotePingNormal)
     PingPong pp;
     pp.appName = "app";
     pp.ip = "1.2.3.4";
-    co::Json json = pp.as_json();
+    compat::Json json = pp.as_json();
     svc.handleRemotePing(json);
     SUCCEED();
 }
@@ -365,7 +406,7 @@ TEST(HandleRpcServiceTest, HandleRemoteDisApplyShareConnect)
     ShareConnectDisApply sd;
     sd.appName = "app";
     sd.tarAppname = "target";
-    co::Json json = sd.as_json();
+    compat::Json json = sd.as_json();
     svc.handleRemoteDisApplyShareConnect(json);
     SUCCEED();
 }
@@ -375,8 +416,8 @@ TEST(HandleRpcServiceTest, HandleRemoteSearchIp)
     Stub stub;
     installDiscoveryStubs(stub);
     HandleRpcService svc;
-    co::Json json;
-    svc.handleRemoteSearchIp(json);
+    compat::Json json;
+    svc.handleRemoteSearchIp(json, false);
     SUCCEED();
 }
 
@@ -388,8 +429,8 @@ TEST(HandleRpcServiceTest, HanldeRemoteDiscover)
     DiscoverInfo dis;
     dis.ip = "1.2.3.4";
     dis.msg = "msg";
-    co::Json json = dis.as_json();
-    svc.hanldeRemoteDiscover(json);
+    compat::Json json = dis.as_json();
+    svc.hanldeRemoteDiscover(json, false);
     SUCCEED();
 }
 

@@ -14,7 +14,11 @@
 
 #include <QObject>
 #include <QMap>
+#include <QSet>
+#include <QMutex>
+#include <QWaitCondition>
 #include <QByteArray>
+#include <QSharedPointer>
 
 class SessionWorker : public QObject, public SessionCallInterface
 {
@@ -23,7 +27,8 @@ public:
     explicit SessionWorker(QObject *parent = nullptr);
     ~SessionWorker();
 
-    void onReceivedMessage(const proto::OriginMessage &request, proto::OriginMessage *response) override;
+    bool onReceivedMessage(const proto::OriginMessage &request, const std::string &remote,
+                           proto::OriginMessage *response) override;
 
     bool onStateChanged(int state, std::string &msg) override;
 
@@ -41,7 +46,14 @@ public:
     bool sendAsyncRequest(const QString &target, const proto::OriginMessage &request);
     void sendTunnelMessage(const QString &target, int mask, const QByteArray &payload);
 
+    // QR / data-transfer pairing secret. Never a shared constant.
     void updatePincode(QString code);
+    /// Persist the token issued by @p ip so future logins are silent.
+    void storePeerToken(const QString &ip, const QString &token);
+    /// Answer a pending pairing confirmation (called from the GUI thread).
+    bool replyPairing(const QString &ip, bool agree);
+    void setPairingTimeoutMs(int ms) { _pairingTimeoutMs = ms; }
+
     void updateLogin(QString ip, bool logined);
     bool isClientLogin(QString &ip);
     // An authenticated peer may be connected through our server side (the
@@ -63,6 +75,9 @@ signals:
 
     void onRejectConnection();
 
+    // A peer without a token asks to pair; the frontend must ask the user.
+    void pairingRequested(const QString &ip, const QString &name);
+
     // rpc async call result
     void onRpcResult(int32_t type, const QString &response);
 
@@ -83,6 +98,16 @@ private:
     template<typename T>
     bool doAsyncRequest(T *endpoint, const std::string &target, const proto::OriginMessage &request);
 
+    // v25 authentication
+    bool handleLogin(const picojson::value &json, const proto::OriginMessage &request,
+                     const std::string &remote, proto::OriginMessage *response);
+    bool requestPairing(const QString &ip, const QString &name);
+    bool isSessionAuthenticated(const std::string &remote) const;
+    bool isBlocked(const QString &ip);
+    void recordFailure(const QString &ip);
+    static bool constantTimeEquals(const std::string &lhs, const std::string &rhs);
+    static QString peerIpOf(const std::string &remote);
+
     std::shared_ptr<AsioService> _asioService;
     // rpc service and client
     std::shared_ptr<ProtoServer> _server { nullptr };
@@ -90,16 +115,38 @@ private:
 
     ExtenMessageHandler _extMsghandler { nullptr };
 
+    // QR / data-transfer pairing secret.
     QString _savedPin = "";
-    QString _accessToken = "";
     QString _connectedAddress = "";
     QString _realIP = "";
 
     // mark the connection need to retry after disconneted.
     bool _tryConnect { false };
 
-    // <ip, login>
+    // <peer ip, login>; used for outgoing requests and client sessions.
     QMap<QString, bool> _login_hosts;
+    // Server-side authenticated connection ids ("s:ip:port"). Auth is bound to
+    // the connection so another host behind the same NAT cannot ride it.
+    QSet<QString> _authenticated_conns;
+    mutable QMutex _state_lock;
+
+    struct PairingRequest {
+        QMutex mutex;
+        QWaitCondition cond;
+        bool decided { false };
+        bool agreed { false };
+    };
+    QMap<QString, QSharedPointer<PairingRequest>> _pending_pairings;
+    mutable QMutex _pairing_lock;
+    int _pairingTimeoutMs { 30000 };
+
+    struct FailureEntry {
+        int failures { 0 };
+        qint64 lastFailureMs { 0 };
+        qint64 blockedUntilMs { 0 };
+    };
+    QMap<QString, FailureEntry> _auth_failures;
+    mutable QMutex _failure_lock;
 };
 
 #endif // SESSIONWORKER_H

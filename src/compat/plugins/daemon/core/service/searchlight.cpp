@@ -1,23 +1,22 @@
-﻿// SPDX-FileCopyrightText: 2023 UnionTech Software Technology Co., Ltd.
+// SPDX-FileCopyrightText: 2023 - 2026 UnionTech Software Technology Co., Ltd.
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include <QDebug>
+#include <QHostAddress>
+#include <QUdpSocket>
+
 #include <utils/utils.h>
 #include "searchlight.h"
-#include "co/co/sock.h"
-#include "co/json.h"
-#include "co/time.h"
-#include "co/co.h"
-#include "co/log.h"
+#include "common/compatbase.h"
 #include "common/constant.h"
 #include "ipc/proto/comstruct.h"
 #include "jobmanager.h"
 
-//DEF_int32(max_idle, 3000, "max_idle");
-DEF_string(udp_ip, "0.0.0.0", "udp_ip");
-DEF_int32(udp_port, 30001, "udp_port");
-DEF_string(mcast_ip, "239.255.0.1", "mcast_ip");
+// Compile time defaults of the v20 discovery protocol. The old coost flags
+// were never set from the command line by the daemon entry point.
+static constexpr int kUdpPort = 30001;
+static constexpr char kMcastIp[] = "239.255.0.1";
 
 static QMutex _search_ip_lock;
 static QStringList filter;
@@ -25,7 +24,7 @@ static std::atomic_bool _send_tcp { false };
 
 namespace searchlight {
 
-Discoverer::Discoverer(const fastring& listen_for_service,
+Discoverer::Discoverer(const std::string& listen_for_service,
            const on_services_changed_t on_services_changed
           )
     : _listen_for_service(listen_for_service)
@@ -49,44 +48,20 @@ Discoverer::~Discoverer()
 void Discoverer::start()
 {
     _stop = true;
-    sock_t sockfd = co::udp_socket();
-    if (sockfd < 0) {
-        ELOG << "Failed to create socket";
+
+    QUdpSocket socket;
+    // ShareAddress/ReuseAddressHint keep a restart (or a second daemon) from
+    // failing to bind the discovery port.
+    if (!socket.bind(QHostAddress::AnyIPv4, static_cast<quint16>(kUdpPort),
+                     QUdpSocket::ShareAddress | QUdpSocket::ReuseAddressHint)) {
+        ELOG << "Failed to bind discovery port:" << kUdpPort;
         return;
     }
 
-    struct sockaddr_in addr;
-    bool init = co::init_addr(&addr, FLG_udp_ip.c_str(), FLG_udp_port);
-    if (!init) {
-        ELOG << "Failed to init address";
-        co::close(sockfd);
-        return;
+    if (!socket.joinMulticastGroup(QHostAddress(QString::fromLatin1(kMcastIp)))) {
+        ELOG << "Failed to join multicast group:" << kMcastIp;
+        // Unicast discovery still works, so keep listening.
     }
-
-    int res = co::bind(sockfd, &addr, sizeof(addr));
-    if (res < 0) {
-        ELOG << "Failed to bind address";
-        co::close(sockfd);
-        return;
-    }
-
-    //给 socket 设置 SO_REUSEADDR 选项，一般 server 端的 listening socket 需要设置这个选项，防止 server 重启后 bind 失败。
-    co::set_reuseaddr(sockfd);
-
-recheck:
-    // 将套接字加入到组播组
-    struct ip_mreq mreq{};
-    mreq.imr_multiaddr.s_addr = inet_addr(FLG_mcast_ip.c_str());
-    mreq.imr_interface.s_addr = htonl(INADDR_ANY);
-    if (co::setsockopt(sockfd, IPPROTO_IP, IP_ADD_MEMBERSHIP, (char*)&mreq, sizeof(mreq)) < 0) {
-        ELOG << "Failed to join multicast group, retry after 3s.";
-        sleep::ms(3000); // 注册组播失败，3秒后重试
-        goto recheck;
-    }
-
-    struct sockaddr_in cli;
-    int len = sizeof(cli);
-    char buffer[1024];
 
     _stop = false;
 
@@ -94,7 +69,7 @@ recheck:
     // 定时更新发现设备
     QUNIGO([this](){
         while (!_stop) {
-            sleep::ms(1000); //co::sleep(1000);
+            compat::sleep(1000);
             remove_idle_services();
             // callback discovery changed
             QList<service> _changed;
@@ -112,20 +87,25 @@ recheck:
     LOG << "discoverer server start";
     // 接收组播数据包
     while (!_stop) {
-        memset(buffer, 0, sizeof(buffer));
-        int recv_len = co::recvfrom(sockfd, buffer, sizeof(buffer), &cli, &len);
-        if (recv_len < 0) {
-            // LOG << "discoverer server recvfrom error: " << co::strerror();
-            co::sleep(100);
+        if (!socket.waitForReadyRead(500))
             continue;
+
+        while (socket.hasPendingDatagrams()) {
+            QByteArray datagram;
+            datagram.resize(static_cast<int>(socket.pendingDatagramSize()));
+            QHostAddress sender;
+            quint16 senderPort = 0;
+            const qint64 read = socket.readDatagram(datagram.data(), datagram.size(),
+                                                    &sender, &senderPort);
+            if (read < 0)
+                continue;
+
+            const std::string msg(datagram.constData(), static_cast<size_t>(read));
+            const std::string endpoint = sender.toString().toStdString() + ":"
+                    + std::to_string(senderPort);
+            handle_message(msg, endpoint);
         }
-
-        fastring msg(buffer, static_cast<size_t>(recv_len));
-        handle_message(msg, co::addr2str(&cli));
     }
-
-    // 关闭套接字
-    co::close(sockfd);
 
     _stop = true;
 }
@@ -149,19 +129,19 @@ void Discoverer::setSearchIp(const QString &ip)
     }
 }
 
-void Discoverer::handle_message(const fastring& message, const fastring& sender_endpoint,
+void Discoverer::handle_message(const std::string& message, const std::string& sender_endpoint,
                                 const bool isFilter)
 {
     // 处理接收到的数据
     // LOG << "server recv ==== " << message << " from " << sender_endpoint;
-    co::Json node;
+    compat::Json node;
     if (!node.parse_from(message)) {
         DLOG << "Invalid service, ignore!!!!!";
         return;
     }
 
-    fastring name = node.get("name").as_string();
-    fastring info = node.get("info").as_string();
+    std::string name = node.get("name").as_string();
+    std::string info = node.get("info").as_string();
     QString  ip = node.get("info","os","ipv4").as_string().c_str();
 
 
@@ -170,7 +150,7 @@ void Discoverer::handle_message(const fastring& message, const fastring& sender_
     // 判断同网段
     auto preHost = ip.lastIndexOf(".") > ip.size()
             ? ip : ip.mid(0, ip.lastIndexOf("."));
-    fastring self_ip = Util::getFirstIp();
+    std::string self_ip = Util::getFirstIp();
     bool filterContain { false };
     QStringList filters;
     {
@@ -179,7 +159,7 @@ void Discoverer::handle_message(const fastring& message, const fastring& sender_
         if (filterContain && isFilter)
             _send_tcp = false;
     }
-    if (message.starts_with(_listen_for_service) && ip != QString(self_ip.c_str())
+    if (message.rfind(_listen_for_service, 0) == 0 && ip != QString(self_ip.c_str())
             && (filterContain || !isFilter || QString(self_ip.c_str()).startsWith(preHost))) {
         // 找到最近的时间修改，只发送改变了的
         handleChanges(endpoint, info, _timer.ms());
@@ -219,7 +199,7 @@ bool Discoverer::remove_idle_services()
     return removed;
 }
 
-void Discoverer::handleChanges(const QString &endpoint, const fastring &info, const qint64 time)
+void Discoverer::handleChanges(const QString &endpoint, const std::string &info, const qint64 time)
 {
     if (endpoint.isEmpty()) {
         ELOG << " ip is null !!!!! endpoint = " << endpoint.toStdString() << " info = " << info;
@@ -252,9 +232,9 @@ void Discoverer::handleChanges(const QString &endpoint, const fastring &info, co
 }
 
 
-Announcer::Announcer(const fastring& service_name,
+Announcer::Announcer(const std::string& service_name,
           const uint16_t service_port,
-          const fastring& info
+          const std::string& info
           )
     : _service_name(service_name)
     , _service_port(service_port)
@@ -268,47 +248,47 @@ Announcer::~Announcer()
     _stop = true;
 }
 
-void Announcer::updateBase(const fastring &info)
+void Announcer::updateBase(const std::string &info)
 {
     _base_info = info;
 }
 
-fastring Announcer::baseInfo() const
+std::string Announcer::baseInfo() const
 {
     return _base_info;
 }
 
-void Announcer::appendApp(const fastring &info)
+void Announcer::appendApp(const std::string &info)
 {
     int idx = sameApp(info);
     if (idx >= 0) {
         //remove old one
-        _app_infos.remove(idx);
+        _app_infos.erase(_app_infos.begin() + idx);
     }
     _app_infos.push_back(info);
 }
 
-void Announcer::removeApp(const fastring &info)
+void Announcer::removeApp(const std::string &info)
 {
     int idx = sameApp(info);
     if (idx >= 0) {
         //remove find one
-        _app_infos.remove(idx);
+        _app_infos.erase(_app_infos.begin() + idx);
     }
 }
 
-void Announcer::removeAppbyName(const fastring &name)
+void Announcer::removeAppbyName(const std::string &name)
 {
     for (size_t i = 0; i < _app_infos.size(); ++i) {
-        co::Json oajson;
+        compat::Json oajson;
         if (!oajson.parse_from(_app_infos[i])) {
             ELOG << "remove incorrect app node format:" << _app_infos[i];
-            _app_infos.remove(i);
+            _app_infos.erase(_app_infos.begin() + i);
             continue;
         }
-        fastring appname = oajson.get("appname").as_string();
+        std::string appname = oajson.get("appname").as_string();
         if (appname.compare(name) == 0) {
-            _app_infos.remove(i);
+            _app_infos.erase(_app_infos.begin() + i);
         }
     }
 }
@@ -316,52 +296,31 @@ void Announcer::removeAppbyName(const fastring &name)
 void Announcer::start(handleTcpDiscover handle)
 {
     _stop = true;
-    sock_t sockfd = co::udp_socket();
-    if (sockfd < 0) {
-        ELOG << "Failed to create socket";
-        return;
-    }
 
+    QUdpSocket socket;
     // 设置允许发送组播数据包回环：关闭，过滤来自本机的包
-    int enable = 0;
-    if (co::setsockopt(sockfd, IPPROTO_IP, IP_MULTICAST_LOOP, &enable, sizeof(enable)) < 0) {
-        ELOG << "Failed to set socket options";
-        co::close(sockfd);
-        return;
-    }
-
-    // 填充目标组播地址和端口号
-    struct sockaddr_in dest_addr;
-    int len = sizeof(dest_addr);
-    bool init = co::init_addr(&dest_addr, FLG_mcast_ip.c_str(), FLG_udp_port);
-    if (!init) {
-        ELOG << "Failed to set destination address";
-        co::close(sockfd);
-        return;
-    }
+    socket.setSocketOption(QAbstractSocket::MulticastLoopbackOption, 0);
 
     _stop = false;
 
     LOG << "announcer server start";
-    // 发送数据包 int sendto(sock_t fd, const void* buf, int n, const void* dst_addr, int addrlen, int ms=-1);
     while (!_stop) {
-        fastring message = udpSendPackage();
+        const std::string message = udpSendPackage();
 
-        // DLOG << "UDP send: === " << message;
-        int send_len = co::sendto(sockfd, message.c_str(), static_cast<int>(message.size()), &dest_addr, len);
-        if (send_len < 0 || Util::getFirstIp() == "")
+        const qint64 sendLen = socket.writeDatagram(message.data(),
+                                                    static_cast<qint64>(message.size()),
+                                                    QHostAddress(QString::fromLatin1(kMcastIp)),
+                                                    static_cast<quint16>(kUdpPort));
+        if (sendLen < 0 || Util::getFirstIp() == "")
             ELOG << "Failed to send data";
 
-        co::sleep(1000); // announcer every second
+        compat::sleep(1000); // announcer every second
 
         QMutexLocker lk(&_search_ip_lock);
         if (_send_tcp && !filter.empty()) {
             handle(filter.first());
         }
     }
-
-    // 关闭套接字
-    co::close(sockfd);
 
     _finished = true;
     _stop = true;
@@ -376,22 +335,22 @@ void Announcer::exit()
     _stop = true;
 }
 
-fastring Announcer::udpSendPackage()
+std::string Announcer::udpSendPackage()
 {
-    co::Json node;
+    compat::Json node;
     node.add_member("name", _service_name);
     node.add_member("port", _service_port);
-    co::Json baseJson;
+    compat::Json baseJson;
     baseJson.parse_from(_base_info);
     //NodeInfo
-    co::Json nodeinfo;
+    compat::Json nodeinfo;
     NodePeerInfo nodepeer;
     nodepeer.from_json(baseJson);
     nodepeer.ipv4 = Util::getFirstIp();
     nodeinfo.add_member("os", nodepeer.as_json());
-    co::Json appinfos;
+    compat::Json appinfos;
     for (size_t i = 0; i < _app_infos.size(); ++i) {
-        co::Json appjson;
+        compat::Json appjson;
         if (appjson.parse_from(_app_infos[i])) {
             appinfos.push_back(appjson);
         }
@@ -404,19 +363,19 @@ fastring Announcer::udpSendPackage()
     return node.str();
 }
 
-fastring Announcer::nodeInfoStr()
+std::string Announcer::nodeInfoStr()
 {
-    co::Json baseJson;
+    compat::Json baseJson;
     baseJson.parse_from(_base_info);
     //NodeInfo
-    co::Json nodeinfo;
+    compat::Json nodeinfo;
     NodePeerInfo nodepeer;
     nodepeer.from_json(baseJson);
     nodepeer.ipv4 = Util::getFirstIp();
     nodeinfo.add_member("os", nodepeer.as_json());
-    co::Json appinfos;
+    compat::Json appinfos;
     for (size_t i = 0; i < _app_infos.size(); ++i) {
-        co::Json appjson;
+        compat::Json appjson;
         if (appjson.parse_from(_app_infos[i])) {
             appinfos.push_back(appjson);
         }
@@ -426,22 +385,22 @@ fastring Announcer::nodeInfoStr()
     return nodeinfo.str();
 }
 
-int Announcer::sameApp(const fastring &info)
+int Announcer::sameApp(const std::string &info)
 {
-    co::Json appjson;
+    compat::Json appjson;
     if (!appjson.parse_from(info)) {
         ELOG << "incorrect app node info:" << info;
         return -1;
     }
-    fastring appname = appjson.get("appname").as_string();
+    std::string appname = appjson.get("appname").as_string();
     for (size_t i = 0; i < _app_infos.size(); ++i) {
-        co::Json oajson;
+        compat::Json oajson;
         if (!oajson.parse_from(_app_infos[i])) {
             ELOG << "remove incorrect app node format:" << _app_infos[i];
-            _app_infos.remove(i);
+            _app_infos.erase(_app_infos.begin() + i);
             continue;
         }
-        fastring name = oajson.get("appname").as_string();
+        std::string name = oajson.get("appname").as_string();
         if (name.compare(appname) == 0) {
             return i;
         }

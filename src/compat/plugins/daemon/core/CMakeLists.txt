@@ -1,4 +1,4 @@
-﻿cmake_minimum_required(VERSION 3.13)
+cmake_minimum_required(VERSION 3.13)
 
 project(daemon-core)
 
@@ -44,10 +44,9 @@ target_link_libraries(${PROJECT_NAME}
     Qt${QT_VERSION_MAJOR}::Network
     Qt${QT_VERSION_MAJOR}::Concurrent
     uniapi
-    co
     slotipc
-    zrpc
     sslconf
+    netutil
 )
 
 #System libraries

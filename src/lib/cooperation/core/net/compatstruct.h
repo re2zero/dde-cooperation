@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2023 UnionTech Software Technology Co., Ltd.
+﻿// SPDX-FileCopyrightText: 2023 - 2026 UnionTech Software Technology Co., Ltd.
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -40,6 +40,7 @@ typedef enum ipc_type_t {
     FRONT_DISCONNECT_CB = 114, // 断开连接
     FRONT_SHARE_DISAPPLY_CONNECT = 115, // 收到取消申请共享连接
     FRONT_SEARCH_IP_DEVICE_RESULT = 116, // 搜索device的结果
+    FRONT_LOGIN_CONFIRM = 117, // 兼容协议：请求本机用户确认远端登录
 } IpcType;
 
 

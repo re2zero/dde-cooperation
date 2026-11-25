@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2025 UnionTech Software Technology Co., Ltd.
+// SPDX-FileCopyrightText: 2025 - 2026 UnionTech Software Technology Co., Ltd.
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -133,9 +133,14 @@ bool Service::Stop()
     // Update polling loop mode flag
     _polling = false;
 
-    // Wait for service is stopped
-    while (IsStarted())
-        BaseKit::Thread::Yield();
+    // A worker thread may have terminated before the posted stop handler ran
+    // (for example when an exception escaped a completion handler). Waiting
+    // for a flag nobody is going to clear would spin forever, so finish the
+    // stop here instead.
+    if (IsStarted()) {
+        _started = false;
+        onStopped();
+    }
 
     return true;
 }

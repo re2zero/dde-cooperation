@@ -1,9 +1,9 @@
-// SPDX-FileCopyrightText: 2026 UnionTech Software Technology Co., Ltd.
+// SPDX-FileCopyrightText: 2026 - 2026 UnionTech Software Technology Co., Ltd.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include <gtest/gtest.h>
 #include "service/searchlight.h"
-#include "co/json.h"
+#include "common/compatbase.h"
 #include "utils/utils.h"
 #include "common/commonutils.h"
 #include "stub.h"
@@ -12,20 +12,20 @@
 TEST(SearchlightAnnouncerTest, ConstructAndBaseInfo)
 {
     searchlight::Announcer ann("myservice", 51597, "{\"uuid\":\"abc\"}");
-    EXPECT_EQ(ann.baseInfo(), fastring("{\"uuid\":\"abc\"}"));
+    EXPECT_EQ(ann.baseInfo(), std::string("{\"uuid\":\"abc\"}"));
 }
 
 TEST(SearchlightAnnouncerTest, UpdateBase)
 {
     searchlight::Announcer ann("svc", 51597, "{\"uuid\":\"old\"}");
     ann.updateBase("{\"uuid\":\"new\"}");
-    EXPECT_EQ(ann.baseInfo(), fastring("{\"uuid\":\"new\"}"));
+    EXPECT_EQ(ann.baseInfo(), std::string("{\"uuid\":\"new\"}"));
 }
 
 TEST(SearchlightAnnouncerTest, AppendApp)
 {
     searchlight::Announcer ann("svc", 51597, "{\"uuid\":\"base\"}");
-    fastring app1 = "{\"appname\":\"app1\",\"json\":\"{}\"}";
+    std::string app1 = "{\"appname\":\"app1\",\"json\":\"{}\"}";
     ann.appendApp(app1);
     SUCCEED();
 }
@@ -33,7 +33,7 @@ TEST(SearchlightAnnouncerTest, AppendApp)
 TEST(SearchlightAnnouncerTest, AppendAppDuplicate)
 {
     searchlight::Announcer ann("svc", 51597, "{\"uuid\":\"base\"}");
-    fastring app1 = "{\"appname\":\"app1\",\"json\":\"{}\"}";
+    std::string app1 = "{\"appname\":\"app1\",\"json\":\"{}\"}";
     ann.appendApp(app1);
     ann.appendApp(app1); // duplicate replaces old
     SUCCEED();
@@ -42,7 +42,7 @@ TEST(SearchlightAnnouncerTest, AppendAppDuplicate)
 TEST(SearchlightAnnouncerTest, RemoveApp)
 {
     searchlight::Announcer ann("svc", 51597, "{\"uuid\":\"base\"}");
-    fastring app1 = "{\"appname\":\"app1\",\"json\":\"{}\"}";
+    std::string app1 = "{\"appname\":\"app1\",\"json\":\"{}\"}";
     ann.appendApp(app1);
     ann.removeApp(app1);
     SUCCEED();
@@ -68,7 +68,7 @@ TEST(SearchlightAnnouncerTest, RemoveAppByNameInvalid)
 TEST(SearchlightAnnouncerTest, SameAppInvalidJson)
 {
     searchlight::Announcer ann("svc", 51597, "{\"uuid\":\"base\"}");
-    fastring bad = "notjson";
+    std::string bad = "notjson";
     int idx = ann.sameApp(bad); // private, but -fno-access-control
     EXPECT_EQ(idx, -1);
 }
@@ -76,27 +76,27 @@ TEST(SearchlightAnnouncerTest, SameAppInvalidJson)
 TEST(SearchlightAnnouncerTest, UdpSendPackage)
 {
     searchlight::Announcer ann("svc", 51597, "{\"uuid\":\"base\"}");
-    fastring pkg = ann.udpSendPackage();
+    std::string pkg = ann.udpSendPackage();
     EXPECT_FALSE(pkg.empty());
-    co::Json j;
+    compat::Json j;
     EXPECT_TRUE(j.parse_from(pkg));
-    EXPECT_EQ(j.get("name").as_string(), fastring("svc"));
+    EXPECT_EQ(j.get("name").as_string(), std::string("svc"));
 }
 
 TEST(SearchlightAnnouncerTest, UdpSendPackageWithApps)
 {
     searchlight::Announcer ann("svc", 51597, "{\"uuid\":\"base\"}");
     ann.appendApp("{\"appname\":\"app1\",\"json\":\"{}\"}");
-    fastring pkg = ann.udpSendPackage();
+    std::string pkg = ann.udpSendPackage();
     EXPECT_FALSE(pkg.empty());
 }
 
 TEST(SearchlightAnnouncerTest, NodeInfoStr)
 {
     searchlight::Announcer ann("svc", 51597, "{\"uuid\":\"base\"}");
-    fastring info = ann.nodeInfoStr();
+    std::string info = ann.nodeInfoStr();
     EXPECT_FALSE(info.empty());
-    co::Json j;
+    compat::Json j;
     EXPECT_TRUE(j.parse_from(info));
 }
 
@@ -152,7 +152,7 @@ TEST(SearchlightDiscovererTest, HandleMessageValidNoListenMatch)
 {
     searchlight::Discoverer::on_services_changed_t cb = [](const QList<searchlight::Discoverer::service>&){};
     searchlight::Discoverer dis("myservice", cb);
-    co::Json node;
+    compat::Json node;
     node.add_member("name", "other_service");
     node.add_member("info", "{\"os\":{\"uuid\":\"uid1\"}}");
     dis.handle_message(node.str(), "1.1.1.1:80", false);
@@ -189,7 +189,7 @@ TEST(SearchlightDiscovererTest, HandleChangesUpdatesExisting)
     auto ser = dis._discovered_services.value("1.2.3.4");
     ASSERT_FALSE(ser.isNull());
     EXPECT_EQ(ser->last_seen, static_cast<qint64>(2000));
-    EXPECT_EQ(ser->info, fastring("{\"os\":{\"uuid\":\"u2\"}}"));
+    EXPECT_EQ(ser->info, std::string("{\"os\":{\"uuid\":\"u2\"}}"));
     bool foundChange = false;
     for (const auto &s : dis._change_sevices) {
         if (s.endpoint == "1.2.3.4" && s.flags == 2) foundChange = true;
@@ -257,16 +257,41 @@ TEST(SearchlightDiscovererTest, HandleMessageValidMatchingService)
     searchlight::Discoverer dis("{", cb);
     Stub stub;
     stub.set((void *)deepin_cross::CommonUitls::getFirstIp, fakeFirstIpOther);
-    co::Json os;
+    compat::Json os;
     os.add_member("uuid", "x");
     os.add_member("ipv4", "1.2.3.4");
-    co::Json info;
+    compat::Json info;
     info.add_member("os", os);
-    co::Json node;
+    compat::Json node;
     node.add_member("name", "myservice");
     node.add_member("info", info);
     dis.handle_message(node.str(), "1.2.3.4:80", false);
     EXPECT_FALSE(dis._discovered_services.value("1.2.3.4").isNull());
+}
+
+// The v20 announcer puts "info" as a JSON object; the discoverer must store it
+// serialized so DiscoveryJob can parse uuid/apps back out of service.info.
+TEST(SearchlightDiscovererTest, HandleMessageStoresSerializedInfo)
+{
+    searchlight::Discoverer::on_services_changed_t cb = [](const QList<searchlight::Discoverer::service>&){};
+    searchlight::Discoverer dis("{", cb);
+    Stub stub;
+    stub.set((void *)deepin_cross::CommonUitls::getFirstIp, fakeFirstIpOther);
+    compat::Json os;
+    os.add_member("uuid", "x");
+    os.add_member("ipv4", "1.2.3.4");
+    compat::Json info;
+    info.add_member("os", os);
+    compat::Json node;
+    node.add_member("name", "myservice");
+    node.add_member("info", info);
+    dis.handle_message(node.str(), "1.2.3.4:80", false);
+
+    auto ser = dis._discovered_services.value("1.2.3.4");
+    ASSERT_FALSE(ser.isNull());
+    compat::Json stored;
+    ASSERT_TRUE(stored.parse_from(ser->info));
+    EXPECT_EQ(stored.get("os", "uuid").as_string(), std::string("x"));
 }
 
 // When the advertised ipv4 equals the self ip the message is ignored.
@@ -276,12 +301,12 @@ TEST(SearchlightDiscovererTest, HandleMessageMatchingServiceSameIp)
     searchlight::Discoverer dis("{", cb);
     Stub stub;
     stub.set((void *)deepin_cross::CommonUitls::getFirstIp, fakeFirstIpSame);
-    co::Json os;
+    compat::Json os;
     os.add_member("uuid", "x");
     os.add_member("ipv4", "1.2.3.4"); // equals the stubbed self ip
-    co::Json info;
+    compat::Json info;
     info.add_member("os", os);
-    co::Json node;
+    compat::Json node;
     node.add_member("name", "myservice");
     node.add_member("info", info);
     dis.handle_message(node.str(), "1.2.3.4:80", false);
@@ -335,9 +360,9 @@ TEST(SearchlightAnnouncerTest, NodeInfoStrWithApps)
 {
     searchlight::Announcer ann("svc", 51597, "{\"uuid\":\"base\"}");
     ann.appendApp("{\"appname\":\"app1\",\"json\":\"{}\"}");
-    fastring info = ann.nodeInfoStr();
+    std::string info = ann.nodeInfoStr();
     EXPECT_FALSE(info.empty());
-    co::Json j;
+    compat::Json j;
     EXPECT_TRUE(j.parse_from(info));
 }
 
@@ -368,14 +393,14 @@ TEST(SearchlightAnnouncerTest, SameAppCleansBadEntries)
 TEST(SearchlightCov2Test, UpdateBaseReflectedInUdpPackage)
 {
     searchlight::Announcer ann("svc", 51597, "{\"uuid\":\"v1\"}");
-    EXPECT_EQ(ann.baseInfo(), fastring("{\"uuid\":\"v1\"}"));
+    EXPECT_EQ(ann.baseInfo(), std::string("{\"uuid\":\"v1\"}"));
     ann.updateBase("{\"uuid\":\"v2\"}");
-    EXPECT_EQ(ann.baseInfo(), fastring("{\"uuid\":\"v2\"}"));
+    EXPECT_EQ(ann.baseInfo(), std::string("{\"uuid\":\"v2\"}"));
 
-    fastring pkg = ann.udpSendPackage();
-    co::Json j;
+    std::string pkg = ann.udpSendPackage();
+    compat::Json j;
     ASSERT_TRUE(j.parse_from(pkg));
-    EXPECT_EQ(j.get("info", "os", "uuid").as_string(), fastring("v2"));
+    EXPECT_EQ(j.get("info", "os", "uuid").as_string(), std::string("v2"));
 }
 
 // appendApp with the same appname but different payload replaces the old entry
@@ -383,8 +408,8 @@ TEST(SearchlightCov2Test, UpdateBaseReflectedInUdpPackage)
 TEST(SearchlightCov2Test, AppendAppDedupDifferentJson)
 {
     searchlight::Announcer ann("svc", 51597, "{\"uuid\":\"base\"}");
-    fastring a1 = "{\"appname\":\"dup\",\"json\":\"v1\"}";
-    fastring a2 = "{\"appname\":\"dup\",\"json\":\"v2\"}";
+    std::string a1 = "{\"appname\":\"dup\",\"json\":\"v1\"}";
+    std::string a2 = "{\"appname\":\"dup\",\"json\":\"v2\"}";
 
     ann.appendApp(a1);
     ASSERT_EQ(ann._app_infos.size(), static_cast<size_t>(1));
@@ -419,10 +444,10 @@ TEST(SearchlightCov2Test, AppendRemoveMultiple)
     ann.removeApp("{\"appname\":\"a2\",\"json\":\"{}\"}");
 
     ASSERT_EQ(ann._app_infos.size(), static_cast<size_t>(2));
-    co::Json j0; ASSERT_TRUE(j0.parse_from(ann._app_infos[0]));
-    co::Json j1; ASSERT_TRUE(j1.parse_from(ann._app_infos[1]));
-    EXPECT_EQ(j0.get("appname").as_string(), fastring("a1"));
-    EXPECT_EQ(j1.get("appname").as_string(), fastring("a3"));
+    compat::Json j0; ASSERT_TRUE(j0.parse_from(ann._app_infos[0]));
+    compat::Json j1; ASSERT_TRUE(j1.parse_from(ann._app_infos[1]));
+    EXPECT_EQ(j0.get("appname").as_string(), std::string("a1"));
+    EXPECT_EQ(j1.get("appname").as_string(), std::string("a3"));
 }
 
 // handle_message with valid JSON that is NOT an object (e.g. an array) must be
@@ -441,7 +466,7 @@ TEST(SearchlightCov2Test, HandleMessageMissingName)
 {
     searchlight::Discoverer::on_services_changed_t cb = [](const QList<searchlight::Discoverer::service>&){};
     searchlight::Discoverer dis("myservice", cb);
-    co::Json node;
+    compat::Json node;
     node.add_member("info", "{\"os\":{\"uuid\":\"u\"}}");
     dis.handle_message(node.str(), "2.2.2.2:80");
     EXPECT_TRUE(dis._discovered_services.isEmpty());
@@ -453,7 +478,7 @@ TEST(SearchlightCov2Test, HandleMessageMissingInfo)
 {
     searchlight::Discoverer::on_services_changed_t cb = [](const QList<searchlight::Discoverer::service>&){};
     searchlight::Discoverer dis("myservice", cb);
-    co::Json node;
+    compat::Json node;
     node.add_member("name", "myservice");
     dis.handle_message(node.str(), "3.3.3.3:80");
     EXPECT_TRUE(dis._discovered_services.isEmpty());
@@ -465,7 +490,7 @@ TEST(SearchlightCov2Test, HandleMessageNameMismatch)
 {
     searchlight::Discoverer::on_services_changed_t cb = [](const QList<searchlight::Discoverer::service>&){};
     searchlight::Discoverer dis("myservice", cb); // listen "myservice"
-    co::Json node;
+    compat::Json node;
     node.add_member("name", "other_service");
     node.add_member("info", "{\"os\":{\"uuid\":\"x\"}}");
     dis.handle_message(node.str(), "4.4.4.4:80", false);
@@ -485,12 +510,12 @@ TEST(SearchlightCov2Test, SetSearchIpThenFilterMatch)
     Stub stub;
     stub.set((void *)deepin_cross::CommonUitls::getFirstIp, fakeFirstIpOther); // 10.0.0.99
 
-    co::Json os;
+    compat::Json os;
     os.add_member("uuid", "match");
     os.add_member("ipv4", "192.168.1.1"); // == filtered ip
-    co::Json info;
+    compat::Json info;
     info.add_member("os", os);
-    co::Json node;
+    compat::Json node;
     node.add_member("name", "myservice");
     node.add_member("info", info);
 
@@ -513,7 +538,7 @@ TEST(SearchlightCov2Test, HandleChangesUpdateEmptyInfo)
 
     auto ser = dis._discovered_services.value("9.9.9.9");
     ASSERT_FALSE(ser.isNull());
-    EXPECT_EQ(ser->info, fastring(""));
+    EXPECT_EQ(ser->info, std::string(""));
     EXPECT_EQ(ser->last_seen, static_cast<qint64>(2000));
     bool foundChange = false;
     for (const auto &s : dis._change_sevices) {

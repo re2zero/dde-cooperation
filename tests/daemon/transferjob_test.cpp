@@ -1,12 +1,14 @@
-// SPDX-FileCopyrightText: 2026 UnionTech Software Technology Co., Ltd.
+// SPDX-FileCopyrightText: 2026 - 2026 UnionTech Software Technology Co., Ltd.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include <gtest/gtest.h>
+#include <QTcpServer>
+#include <QHostAddress>
 #include "service/job/transferjob.h"
 #include "common/commonstruct.h"
 #include "common/constant.h"
 #include "ipc/proto/chan.h"
-#include "co/json.h"
+#include "common/compatbase.h"
 #include "utils/config.h"
 
 #include <QSignalSpy>
@@ -129,8 +131,8 @@ TEST(TransferJobTest, InitJobWrite)
     TransferJob job;
     job.initJob("app", "target", 1, "[]", false, "savedir", true);
 
-    EXPECT_EQ(job._app_name, fastring("app"));
-    EXPECT_EQ(job._tar_app_name, fastring("target"));
+    EXPECT_EQ(job._app_name, std::string("app"));
+    EXPECT_EQ(job._tar_app_name, std::string("target"));
     EXPECT_EQ(job._jobid, 1);
     EXPECT_EQ(job._status, INIT);
     EXPECT_TRUE(job.isWriteJob());
@@ -158,7 +160,7 @@ TEST(TransferJobTest, InitRpcWriteEmptyTarget)
 
     bool ok = job.initRpc("", 51597);
     EXPECT_TRUE(ok);
-    EXPECT_EQ(job._tar_ip, fastring(""));
+    EXPECT_EQ(job._tar_ip, std::string(""));
     EXPECT_EQ(job._tar_port, (uint16)51597);
 }
 
@@ -178,6 +180,10 @@ TEST(TransferJobTest, InitRpcReadEmptyTarget)
 // (INVOKE) -> returns false, _init_success false.
 TEST(TransferJobTest, InitRpcReadValidTarget)
 {
+    QTcpServer probe;
+    if (!probe.listen(QHostAddress::LocalHost, 51598))
+        GTEST_SKIP() << "port 51598 already in use (real daemon running)";
+    probe.close();
     TransferJob job;
     job.initJob("app", "target", 3, "[]", false, "savedir", false);
 
@@ -218,29 +224,29 @@ TEST(TransferJobTest, SetFileNameAcName)
 {
     TransferJob job;
     job.setFileName("orig", "renamed");
-    EXPECT_EQ(job.acName("orig"), fastring("renamed"));
-    EXPECT_EQ(job.acName("nope"), fastring(""));
+    EXPECT_EQ(job.acName("orig"), std::string("renamed"));
+    EXPECT_EQ(job.acName("nope"), std::string(""));
 }
 
 // 19. GetSaveFullpathEmpty — empty filename rejected -> "".
 TEST(TransferJobTest, GetSaveFullpathEmpty)
 {
     TransferJob job;
-    EXPECT_EQ(job.getSaveFullpath("/root", ""), fastring(""));
+    EXPECT_EQ(job.getSaveFullpath("/root", ""), std::string(""));
 }
 
 // 20. GetSaveFullpathTraversal — filename with ".." -> "".
 TEST(TransferJobTest, GetSaveFullpathTraversal)
 {
     TransferJob job;
-    EXPECT_EQ(job.getSaveFullpath("/root", "../etc/passwd"), fastring(""));
+    EXPECT_EQ(job.getSaveFullpath("/root", "../etc/passwd"), std::string(""));
 }
 
 // 21. GetSaveFullpathAbsolute — filename starts with "/" -> "".
 TEST(TransferJobTest, GetSaveFullpathAbsolute)
 {
     TransferJob job;
-    EXPECT_EQ(job.getSaveFullpath("/root", "/etc/passwd"), fastring(""));
+    EXPECT_EQ(job.getSaveFullpath("/root", "/etc/passwd"), std::string(""));
 }
 
 // 22. GetSaveFullpathValid — set _app_name and a real temp storage dir; a
@@ -255,7 +261,7 @@ TEST(TransferJobTest, GetSaveFullpathValid)
     job._app_name = "testapp";
     DaemonConfig::instance()->setAppConfig("testapp", "storagedir", tempdir.toStdString().c_str());
 
-    fastring result = job.getSaveFullpath(tempdir.toStdString().c_str(), "sub/file.txt");
+    std::string result = job.getSaveFullpath(tempdir.toStdString().c_str(), "sub/file.txt");
     // Path is within the allowed root; either the joined path or "" if realpath
     // rejected it on this filesystem. Both outcomes are acceptable here.
     SUCCEED();
@@ -294,10 +300,10 @@ TEST(TransferJobTest, CreateFileDir)
 TEST(TransferJobTest, GetSubdir)
 {
     TransferJob job;
-    fastring sub = job.getSubdir("/a/b/c/file.txt", "/a/b");
-    // path::split("/a/b/c/file.txt") -> dir="/a/b/c"; remove_prefix("/a/b") -> "/c";
-    // path::join("/c","") -> "/c".
-    EXPECT_EQ(sub, fastring("/c"));
+    std::string sub = job.getSubdir("/a/b/c/file.txt", "/a/b");
+    // compat::path::split("/a/b/c/file.txt") -> dir="/a/b/c"; remove_prefix("/a/b") -> "/c";
+    // compat::path::join("/c","") -> "/c".
+    EXPECT_EQ(sub, std::string("/c"));
 }
 
 // 27. OfflineCancelWrongIp — ip mismatch (_tar_ip empty) -> false.
@@ -606,6 +612,10 @@ TEST(TransferJobCovTest, SendToRemoteDeviceNotEnough)
 
 TEST(TransferJobCovTest, SendToRemoteRealSender)
 {
+    QTcpServer probe;
+    if (!probe.listen(QHostAddress::LocalHost, 51598))
+        GTEST_SKIP() << "port 51598 already in use (real daemon running)";
+    probe.close();
     // Use a real RemoteServiceSender; the send fails (INVOKE_FAIL) which is
     // an acceptable, safe path that still covers sendToRemote's body.
     TransferJob job;
@@ -712,7 +722,7 @@ TEST(TransferJobCovTest, GetSaveFullpathRealpathBranch)
     TransferJob job;
     job._app_name = "realapp";
     // valid filename within rootdir
-    fastring fp = job.getSaveFullpath(dir.path().toStdString(), "sub/file.txt");
+    std::string fp = job.getSaveFullpath(dir.path().toStdString(), "sub/file.txt");
     // either returns a valid path or "" (path-traversal block); both ok
     SUCCEED();
 }
@@ -723,7 +733,7 @@ TEST(TransferJobCovTest, GetSaveFullpathTraversalRelative)
     job._app_name = "realapp2";
     DaemonConfig::instance()->setAppConfig("realapp2", "storagedir", "/tmp");
     // filename with .. -> rejected
-    fastring fp = job.getSaveFullpath("/tmp", "../escape.txt");
+    std::string fp = job.getSaveFullpath("/tmp", "../escape.txt");
     EXPECT_TRUE(fp.empty());
 }
 
@@ -733,7 +743,7 @@ TEST(TransferJobCovTest, GetSaveFullpathAbsolute)
     job._app_name = "realapp3";
     DaemonConfig::instance()->setAppConfig("realapp3", "storagedir", "/tmp");
     // absolute path -> rejected
-    fastring fp = job.getSaveFullpath("/tmp", "/etc/passwd");
+    std::string fp = job.getSaveFullpath("/tmp", "/etc/passwd");
     EXPECT_TRUE(fp.empty());
 }
 
@@ -746,7 +756,7 @@ TEST(TransferJobCovTest, GetSaveFullpathWithNameMap)
     job._app_name = "mapapp";
     // set a rename mapping so the acName branch executes
     job.setFileName("origdir", "renameddir");
-    fastring fp = job.getSaveFullpath(dir.path().toStdString(), "origdir/file.txt");
+    std::string fp = job.getSaveFullpath(dir.path().toStdString(), "origdir/file.txt");
     SUCCEED();
 }
 
@@ -758,7 +768,7 @@ TEST(TransferJobCovTest, GetSaveFullpathRenamedFlat)
     TransferJob job;
     job._app_name = "flatapp";
     job.setFileName("origflat", "renamedflat");
-    fastring fp = job.getSaveFullpath(dir.path().toStdString(), "origflat");
+    std::string fp = job.getSaveFullpath(dir.path().toStdString(), "origflat");
     SUCCEED();
 }
 
@@ -770,13 +780,17 @@ TEST(TransferJobCovTest, GetSaveFullpathTrailingSlashRoot)
     TransferJob job;
     job._app_name = "slashapp";
     // rootdir with trailing slash exercises the pop_back loop
-    fastring root = std::string(dir.path().toStdString()) + "/";
-    fastring fp = job.getSaveFullpath(root, "file.txt");
+    std::string root = std::string(dir.path().toStdString()) + "/";
+    std::string fp = job.getSaveFullpath(root, "file.txt");
     SUCCEED();
 }
 
 TEST(TransferJobCovTest, SendToRemoteCountedStubbedOk)
 {
+    QTcpServer probe;
+    if (!probe.listen(QHostAddress::LocalHost, 51598))
+        GTEST_SKIP() << "port 51598 already in use (real daemon running)";
+    probe.close();
     // FILE_COUNTED block with a stubbed sender that returns success.
     // We can't safely stub the member fn, so use a real sender pointing at a
     // closed port; the send fails fast and we just exercise the body.
@@ -794,6 +808,10 @@ TEST(TransferJobCovTest, SendToRemoteCountedStubbedOk)
 
 TEST(TransferJobCovTest, HandleUpdateRealSender)
 {
+    QTcpServer probe;
+    if (!probe.listen(QHostAddress::LocalHost, 51598))
+        GTEST_SKIP() << "port 51598 already in use (real daemon running)";
+    probe.close();
     TransferJob job;
     job._jobid = 60;
     job._status = STARTED;
@@ -827,7 +845,7 @@ static SendResult fake_send_ioerror(uint32, const QString &, const QByteArray &)
     r.protocolType = 1004;   // FS_DATA
     r.errorType = INVOKE_OK;
     // FileTransResponse.result == -2 == IO_ERROR
-    r.data = fastring("{\"id\":1,\"name\":\"x\",\"result\":-2}");
+    r.data = std::string("{\"id\":1,\"name\":\"x\",\"result\":-2}");
     return r;
 }
 
@@ -947,7 +965,7 @@ TEST(TransferJobCov2Test, WriteAndCreateFileSubdirPath)
     QSharedPointer<FSDataBlock> block(new FSDataBlock);
     block->flags = JobTransFileOp::FIlE_CREATE;
     block->blk_id = 0;
-    block->data = fastring("nested-content");
+    block->data = std::string("nested-content");
     bool ok = job.writeAndCreateFile(block, fpath.toStdString());
     EXPECT_TRUE(ok);
     EXPECT_TRUE(QFile::exists(fpath));
@@ -1007,7 +1025,7 @@ TEST(TransferJobCov2Test, HandleBlockQuequeWriteCreateAndTransOver)
     TransferJob job;
     job.initJob("cov2app", "target", 70, "[]", false, "cov2save", true); // write job
     job._status = STARTED;
-    fastring saveFulldir = job._save_fulldir; // == <tempdir>/cov2save (created by initJob)
+    std::string saveFulldir = job._save_fulldir; // == <tempdir>/cov2save (created by initJob)
 
     // write-path decodes block->filename from base64, so encode the real name.
     QSharedPointer<FSDataBlock> b1(new FSDataBlock);
@@ -1017,7 +1035,7 @@ TEST(TransferJobCov2Test, HandleBlockQuequeWriteCreateAndTransOver)
     b1->filename = Util::encodeBase64("cov2file.txt");
     b1->blk_id = 0;
     b1->data_size = 5;
-    b1->data = fastring("hello");
+    b1->data = std::string("hello");
     b1->flags = JobTransFileOp::FIlE_CREATE;
     job.pushQueque(b1);
 
@@ -1259,7 +1277,7 @@ TEST(TransferJobCov2Test, HandleBlockQuequeWriteFileCloseNotification)
     TransferJob job;
     job.initJob("cov2close", "target", 76, "[]", false, "cov2save", true); // write job
     job._status = STARTED;
-    fastring saveFulldir = job._save_fulldir;
+    std::string saveFulldir = job._save_fulldir;
 
     QSharedPointer<FSDataBlock> b1(new FSDataBlock);
     b1->job_id = 76;
@@ -1268,7 +1286,7 @@ TEST(TransferJobCov2Test, HandleBlockQuequeWriteFileCloseNotification)
     b1->filename = Util::encodeBase64("closefile.txt");
     b1->blk_id = 0;
     b1->data_size = 4;
-    b1->data = fastring("done");
+    b1->data = std::string("done");
     b1->flags = JobTransFileOp::FIlE_CREATE | JobTransFileOp::FILE_CLOSE;
     job.pushQueque(b1);
 
@@ -1323,7 +1341,7 @@ TEST(TransferJobCov2Test, WriteAndCreateFileEmptyDataCreate)
     QSharedPointer<FSDataBlock> block(new FSDataBlock);
     block->flags = JobTransFileOp::FIlE_CREATE;
     block->blk_id = 0;
-    block->data = fastring(""); // len == 0
+    block->data = std::string(""); // len == 0
     bool ok = job.writeAndCreateFile(block, fpath.toStdString());
     EXPECT_TRUE(ok);
     EXPECT_EQ(job._cur_size.load(), 4096);
@@ -1334,6 +1352,10 @@ TEST(TransferJobCov2Test, WriteAndCreateFileEmptyDataCreate)
 // JOB_TRANS_FAILED.
 TEST(TransferJobCov2Test, HandleBlockQuequeReadJobSendFail)
 {
+    QTcpServer probe;
+    if (!probe.listen(QHostAddress::LocalHost, 51598))
+        GTEST_SKIP() << "port 51598 already in use (real daemon running)";
+    probe.close();
     TransferJob job;
     job.initJob("cov2fail", "target", 78, "[]", false, "cov2save", false); // read job
     job._status = STARTED;
@@ -1367,7 +1389,7 @@ TEST(TransferJobCov2Test, HandleBlockQuequeReacquireExistingFile)
     TransferJob job;
     job.initJob("cov2racq", "target", 1000, "[]", false, "cov2save", true); // jobid 1000
     job._status = STARTED;
-    fastring saveFulldir = job._save_fulldir;
+    std::string saveFulldir = job._save_fulldir;
 
     // pre-create the target so reacquirePath detects a collision and renames.
     QString target = QString(saveFulldir.c_str()) + "/racqfile.txt";
@@ -1380,7 +1402,7 @@ TEST(TransferJobCov2Test, HandleBlockQuequeReacquireExistingFile)
     b1->filename = Util::encodeBase64("racqfile.txt");
     b1->blk_id = 0;
     b1->data_size = 3;
-    b1->data = fastring("new");
+    b1->data = std::string("new");
     b1->flags = JobTransFileOp::FIlE_CREATE;
     job.pushQueque(b1);
 
@@ -1396,5 +1418,5 @@ TEST(TransferJobCov2Test, HandleBlockQuequeReacquireExistingFile)
     QString renamed = QString(saveFulldir.c_str()) + "/racqfile(1).txt";
     EXPECT_TRUE(QFile::exists(renamed));
     // and the rename mapping was recorded
-    EXPECT_EQ(job.acName("racqfile.txt"), fastring("racqfile(1).txt"));
+    EXPECT_EQ(job.acName("racqfile.txt"), std::string("racqfile(1).txt"));
 }

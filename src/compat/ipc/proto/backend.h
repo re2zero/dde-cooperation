@@ -2,115 +2,23 @@
 // DO NOT EDIT. All changes will be undone.
 #pragma once
 
-#include "co/rpc.h"
+#include "common/compatbase.h"
 
 namespace ipc {
 
-class Backend : public rpc::Service {
-  public:
-    typedef std::function<void(co::Json&, co::Json&)> Fun;
-
-    Backend() {
-        using std::placeholders::_1;
-        using std::placeholders::_2;
-        _methods["Backend.ping"] = std::bind(&Backend::ping, this, _1, _2);
-        _methods["Backend.getDiscovery"] = std::bind(&Backend::getDiscovery, this, _1, _2);
-        _methods["Backend.getPeerInfo"] = std::bind(&Backend::getPeerInfo, this, _1, _2);
-        _methods["Backend.getPassword"] = std::bind(&Backend::getPassword, this, _1, _2);
-        _methods["Backend.setPassword"] = std::bind(&Backend::setPassword, this, _1, _2);
-        _methods["Backend.tryConnect"] = std::bind(&Backend::tryConnect, this, _1, _2);
-        _methods["Backend.setAppConfig"] = std::bind(&Backend::setAppConfig, this, _1, _2);
-        _methods["Backend.getAppConfig"] = std::bind(&Backend::getAppConfig, this, _1, _2);
-        _methods["Backend.miscMessage"] = std::bind(&Backend::miscMessage, this, _1, _2);
-        _methods["Backend.tryTransFiles"] = std::bind(&Backend::tryTransFiles, this, _1, _2);
-        _methods["Backend.resumeTransJob"] = std::bind(&Backend::resumeTransJob, this, _1, _2);
-        _methods["Backend.cancelTransJob"] = std::bind(&Backend::cancelTransJob, this, _1, _2);
-        _methods["Backend.fsCreate"] = std::bind(&Backend::fsCreate, this, _1, _2);
-        _methods["Backend.fsDelete"] = std::bind(&Backend::fsDelete, this, _1, _2);
-        _methods["Backend.fsRename"] = std::bind(&Backend::fsRename, this, _1, _2);
-        _methods["Backend.fsPull"] = std::bind(&Backend::fsPull, this, _1, _2);
-        _methods["Backend.registerDiscovery"] = std::bind(&Backend::registerDiscovery, this, _1, _2);
-        _methods["Backend.unregisterDiscovery"] = std::bind(&Backend::unregisterDiscovery, this, _1, _2);
-        _methods["Backend.applyTransFiles"] = std::bind(&Backend::applyTransFiles, this, _1, _2);
-        _methods["Backend.shareEvents"] = std::bind(&Backend::shareEvents, this, _1, _2);
-        _methods["Backend.disconnectCb"] = std::bind(&Backend::disconnectCb, this, _1, _2);
-        _methods["Backend.searchDevice"] = std::bind(&Backend::searchDevice, this, _1, _2);
-        _methods["Backend.currentStatus"] = std::bind(&Backend::currentStatus, this, _1, _2);
-    }
-
-    virtual ~Backend() {}
-
-    virtual const char* name() const {
-        return "Backend";
-    }
-
-    virtual const co::map<const char*, Fun>& methods() const {
-        return _methods;
-    }
-
-    virtual void ping(co::Json& req, co::Json& res) = 0;
-
-    virtual void getDiscovery(co::Json& req, co::Json& res) = 0;
-
-    virtual void getPeerInfo(co::Json& req, co::Json& res) = 0;
-
-    virtual void getPassword(co::Json& req, co::Json& res) = 0;
-
-    virtual void setPassword(co::Json& req, co::Json& res) = 0;
-
-    virtual void tryConnect(co::Json& req, co::Json& res) = 0;
-
-    virtual void setAppConfig(co::Json& req, co::Json& res) = 0;
-
-    virtual void getAppConfig(co::Json& req, co::Json& res) = 0;
-
-    virtual void miscMessage(co::Json& req, co::Json& res) = 0;
-
-    virtual void tryTransFiles(co::Json& req, co::Json& res) = 0;
-
-    virtual void resumeTransJob(co::Json& req, co::Json& res) = 0;
-
-    virtual void cancelTransJob(co::Json& req, co::Json& res) = 0;
-
-    virtual void fsCreate(co::Json& req, co::Json& res) = 0;
-
-    virtual void fsDelete(co::Json& req, co::Json& res) = 0;
-
-    virtual void fsRename(co::Json& req, co::Json& res) = 0;
-
-    virtual void fsPull(co::Json& req, co::Json& res) = 0;
-
-    virtual void registerDiscovery(co::Json& req, co::Json& res) = 0;
-
-    virtual void unregisterDiscovery(co::Json& req, co::Json& res) = 0;
-
-    virtual void applyTransFiles(co::Json& req, co::Json& res) = 0;
-
-    virtual void shareEvents(co::Json& req, co::Json& res) = 0;
-
-    virtual void disconnectCb(co::Json& req, co::Json& res) = 0;
-
-    virtual void searchDevice(co::Json& req, co::Json& res) = 0;
-
-    virtual void currentStatus(co::Json& req, co::Json& res) = 0;
-
-  private:
-    co::map<const char*, Fun> _methods;
-};
-
 struct PingBackParam {
-    fastring who;
-    fastring version;
+    std::string who;
+    std::string version;
     int32 cb_port;
 
-    void from_json(const co::Json& _x_) {
+    void from_json(const compat::Json& _x_) {
         who = _x_.get("who").as_c_str();
         version = _x_.get("version").as_c_str();
         cb_port = (int32)_x_.get("cb_port").as_int64();
     }
 
-    co::Json as_json() const {
-        co::Json _x_;
+    compat::Json as_json() const {
+        compat::Json _x_;
         _x_.add_member("who", who);
         _x_.add_member("version", version);
         _x_.add_member("cb_port", cb_port);
@@ -120,15 +28,15 @@ struct PingBackParam {
 
 struct CallResult {
     bool result;
-    fastring msg;
+    std::string msg;
 
-    void from_json(const co::Json& _x_) {
+    void from_json(const compat::Json& _x_) {
         result = _x_.get("result").as_bool();
         msg = _x_.get("msg").as_c_str();
     }
 
-    co::Json as_json() const {
-        co::Json _x_;
+    compat::Json as_json() const {
+        compat::Json _x_;
         _x_.add_member("result", result);
         _x_.add_member("msg", msg);
         return _x_;
@@ -136,20 +44,20 @@ struct CallResult {
 };
 
 struct ConnectParam {
-    fastring targetAppname;
-    fastring appName;
-    fastring host;
-    fastring password;
+    std::string targetAppname;
+    std::string appName;
+    std::string host;
+    std::string password;
 
-    void from_json(const co::Json& _x_) {
+    void from_json(const compat::Json& _x_) {
         targetAppname = _x_.get("targetAppname").as_c_str();
         appName = _x_.get("appName").as_c_str();
         host = _x_.get("host").as_c_str();
         password = _x_.get("password").as_c_str();
     }
 
-    co::Json as_json() const {
-        co::Json _x_;
+    compat::Json as_json() const {
+        compat::Json _x_;
         _x_.add_member("targetAppname", targetAppname);
         _x_.add_member("appName", appName);
         _x_.add_member("host", host);
@@ -159,16 +67,16 @@ struct ConnectParam {
 };
 
 struct PeerParam {
-    fastring session;
-    fastring host;
+    std::string session;
+    std::string host;
 
-    void from_json(const co::Json& _x_) {
+    void from_json(const compat::Json& _x_) {
         session = _x_.get("session").as_c_str();
         host = _x_.get("host").as_c_str();
     }
 
-    co::Json as_json() const {
-        co::Json _x_;
+    compat::Json as_json() const {
+        compat::Json _x_;
         _x_.add_member("session", session);
         _x_.add_member("host", host);
         return _x_;
@@ -177,29 +85,29 @@ struct PeerParam {
 
 struct ConfigParam {
     struct _unamed_s1 {
-        fastring key;
-        fastring value;
+        std::string key;
+        std::string value;
 
-        void from_json(const co::Json& _x_) {
+        void from_json(const compat::Json& _x_) {
             key = _x_.get("key").as_c_str();
             value = _x_.get("value").as_c_str();
         }
 
-        co::Json as_json() const {
-            co::Json _x_;
+        compat::Json as_json() const {
+            compat::Json _x_;
             _x_.add_member("key", key);
             _x_.add_member("value", value);
             return _x_;
         }
     };
 
-    fastring app;
-    co::vector<_unamed_s1> ao;
+    std::string app;
+    std::vector<_unamed_s1> ao;
 
-    void from_json(const co::Json& _x_) {
+    void from_json(const compat::Json& _x_) {
         app = _x_.get("app").as_c_str();
         do {
-            auto& _unamed_v1 = _x_.get("ao");
+            auto _unamed_v1 = _x_.get("ao");
             for (uint32 i = 0; i < _unamed_v1.array_size(); ++i) {
                 _unamed_s1 _unamed_v2;
                 _unamed_v2.from_json(_unamed_v1[i]);
@@ -208,11 +116,11 @@ struct ConfigParam {
         } while (0);
     }
 
-    co::Json as_json() const {
-        co::Json _x_;
+    compat::Json as_json() const {
+        compat::Json _x_;
         _x_.add_member("app", app);
         do {
-            co::Json _unamed_v1;
+            compat::Json _unamed_v1;
             for (size_t i = 0; i < ao.size(); ++i) {
                 _unamed_v1.push_back(ao[i].as_json());
             }
@@ -223,19 +131,19 @@ struct ConfigParam {
 };
 
 struct TransFilesParam {
-    fastring session;
-    fastring targetSession;
+    std::string session;
+    std::string targetSession;
     int32 id;
-    co::vector<fastring> paths;
+    std::vector<std::string> paths;
     bool sub;
-    fastring savedir;
+    std::string savedir;
 
-    void from_json(const co::Json& _x_) {
+    void from_json(const compat::Json& _x_) {
         session = _x_.get("session").as_c_str();
         targetSession = _x_.get("targetSession").as_c_str();
         id = (int32)_x_.get("id").as_int64();
         do {
-            auto& _unamed_v1 = _x_.get("paths");
+            auto _unamed_v1 = _x_.get("paths");
             for (uint32 i = 0; i < _unamed_v1.array_size(); ++i) {
                 paths.push_back(_unamed_v1[i].as_c_str());
             }
@@ -244,13 +152,13 @@ struct TransFilesParam {
         savedir = _x_.get("savedir").as_c_str();
     }
 
-    co::Json as_json() const {
-        co::Json _x_;
+    compat::Json as_json() const {
+        compat::Json _x_;
         _x_.add_member("session", session);
         _x_.add_member("targetSession", targetSession);
         _x_.add_member("id", id);
         do {
-            co::Json _unamed_v1;
+            compat::Json _unamed_v1;
             for (size_t i = 0; i < paths.size(); ++i) {
                 _unamed_v1.push_back(paths[i]);
             }
@@ -263,18 +171,18 @@ struct TransFilesParam {
 };
 
 struct TransJobParam {
-    fastring session;
+    std::string session;
     int32 job_id;
-    fastring appname;
+    std::string appname;
 
-    void from_json(const co::Json& _x_) {
+    void from_json(const compat::Json& _x_) {
         session = _x_.get("session").as_c_str();
         job_id = (int32)_x_.get("job_id").as_int64();
         appname = _x_.get("appname").as_c_str();
     }
 
-    co::Json as_json() const {
-        co::Json _x_;
+    compat::Json as_json() const {
+        compat::Json _x_;
         _x_.add_member("session", session);
         _x_.add_member("job_id", job_id);
         _x_.add_member("appname", appname);
@@ -283,20 +191,20 @@ struct TransJobParam {
 };
 
 struct FsCreateParam {
-    fastring session;
+    std::string session;
     int32 id;
-    fastring path;
+    std::string path;
     bool is_dir;
 
-    void from_json(const co::Json& _x_) {
+    void from_json(const compat::Json& _x_) {
         session = _x_.get("session").as_c_str();
         id = (int32)_x_.get("id").as_int64();
         path = _x_.get("path").as_c_str();
         is_dir = _x_.get("is_dir").as_bool();
     }
 
-    co::Json as_json() const {
-        co::Json _x_;
+    compat::Json as_json() const {
+        compat::Json _x_;
         _x_.add_member("session", session);
         _x_.add_member("id", id);
         _x_.add_member("path", path);
@@ -306,18 +214,18 @@ struct FsCreateParam {
 };
 
 struct FsRenameParam {
-    fastring session;
-    fastring from;
-    fastring to;
+    std::string session;
+    std::string from;
+    std::string to;
 
-    void from_json(const co::Json& _x_) {
+    void from_json(const compat::Json& _x_) {
         session = _x_.get("session").as_c_str();
         from = _x_.get("from").as_c_str();
         to = _x_.get("to").as_c_str();
     }
 
-    co::Json as_json() const {
-        co::Json _x_;
+    compat::Json as_json() const {
+        compat::Json _x_;
         _x_.add_member("session", session);
         _x_.add_member("from", from);
         _x_.add_member("to", to);
@@ -326,17 +234,17 @@ struct FsRenameParam {
 };
 
 struct FsDeleteParam {
-    fastring session;
+    std::string session;
     int32 id;
-    co::vector<fastring> paths;
+    std::vector<std::string> paths;
     bool recursive;
     bool trash;
 
-    void from_json(const co::Json& _x_) {
+    void from_json(const compat::Json& _x_) {
         session = _x_.get("session").as_c_str();
         id = (int32)_x_.get("id").as_int64();
         do {
-            auto& _unamed_v1 = _x_.get("paths");
+            auto _unamed_v1 = _x_.get("paths");
             for (uint32 i = 0; i < _unamed_v1.array_size(); ++i) {
                 paths.push_back(_unamed_v1[i].as_c_str());
             }
@@ -345,12 +253,12 @@ struct FsDeleteParam {
         trash = _x_.get("trash").as_bool();
     }
 
-    co::Json as_json() const {
-        co::Json _x_;
+    compat::Json as_json() const {
+        compat::Json _x_;
         _x_.add_member("session", session);
         _x_.add_member("id", id);
         do {
-            co::Json _unamed_v1;
+            compat::Json _unamed_v1;
             for (size_t i = 0; i < paths.size(); ++i) {
                 _unamed_v1.push_back(paths[i]);
             }
@@ -363,13 +271,13 @@ struct FsDeleteParam {
 };
 
 struct FsPullParam {
-    fastring session;
+    std::string session;
     int32 id;
-    fastring path;
+    std::string path;
     bool include_hidden;
     bool recursive;
 
-    void from_json(const co::Json& _x_) {
+    void from_json(const compat::Json& _x_) {
         session = _x_.get("session").as_c_str();
         id = (int32)_x_.get("id").as_int64();
         path = _x_.get("path").as_c_str();
@@ -377,8 +285,8 @@ struct FsPullParam {
         recursive = _x_.get("recursive").as_bool();
     }
 
-    co::Json as_json() const {
-        co::Json _x_;
+    compat::Json as_json() const {
+        compat::Json _x_;
         _x_.add_member("session", session);
         _x_.add_member("id", id);
         _x_.add_member("path", path);

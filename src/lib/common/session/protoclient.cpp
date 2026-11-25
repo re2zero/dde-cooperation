@@ -202,12 +202,21 @@ void ProtoClient::onReceive(const ::proto::OriginMessage &response)
     // Send response
     proto::OriginMessage reply;
 
+    bool allowed = true;
     if (_callbacks) {
-        _callbacks->onReceivedMessage(response, &reply);
+        allowed = _callbacks->onReceivedMessage(response, "c:" + connectedHost(), &reply);
     } else {
         reply.id = response.id;
         reply.mask = response.mask;
         reply.json_msg = response.json_msg;
+    }
+
+    if (!allowed) {
+        proto::MessageReject reject;
+        reject.id = response.id;
+        reject.error = "authentication required";
+        sendLocked(reject);
+        return;
     }
 
     if (!reply.json_msg.empty())

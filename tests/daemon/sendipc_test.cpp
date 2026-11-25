@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2026 UnionTech Software Technology Co., Ltd.
+// SPDX-FileCopyrightText: 2026 - 2026 UnionTech Software Technology Co., Ltd.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include <gtest/gtest.h>
@@ -162,7 +162,7 @@ TEST_F(SendIpcTest, HandleRemoveJobNoSession)
 // 11. PreprocessOfflineStatus
 TEST_F(SendIpcTest, PreprocessOfflineStatus)
 {
-    svc->preprocessOfflineStatus("app1", PING_FAILED, fastring("msg"));
+    svc->preprocessOfflineStatus("app1", PING_FAILED, std::string("msg"));
     EXPECT_TRUE(svc->_offline_status.contains("app1"));
     EXPECT_EQ(svc->_offline_status.value("app1").type, PING_FAILED);
     EXPECT_EQ(svc->_offline_status.value("app1").status, REMOTE_CLIENT_OFFLINE);
@@ -171,7 +171,7 @@ TEST_F(SendIpcTest, PreprocessOfflineStatus)
 // 12. CancelOfflineStatus
 TEST_F(SendIpcTest, CancelOfflineStatus)
 {
-    svc->preprocessOfflineStatus("app1", PING_FAILED, fastring("msg"));
+    svc->preprocessOfflineStatus("app1", PING_FAILED, std::string("msg"));
     ASSERT_TRUE(svc->_offline_status.contains("app1"));
 
     svc->cancelOfflineStatus("app1");
@@ -182,8 +182,8 @@ TEST_F(SendIpcTest, CancelOfflineStatus)
 // 13. CancelOfflineStatusAll
 TEST_F(SendIpcTest, CancelOfflineStatusAll)
 {
-    svc->preprocessOfflineStatus("app1", PING_FAILED, fastring("m1"));
-    svc->preprocessOfflineStatus("app2", PING_FAILED, fastring("m2"));
+    svc->preprocessOfflineStatus("app1", PING_FAILED, std::string("m1"));
+    svc->preprocessOfflineStatus("app2", PING_FAILED, std::string("m2"));
     ASSERT_EQ(svc->_offline_status.size(), 2);
 
     svc->cancelOfflineStatus("all");
@@ -196,7 +196,7 @@ TEST_F(SendIpcTest, CancelOfflineStatusAll)
 TEST_F(SendIpcTest, HandleAboutToQuit)
 {
     svc->handleSaveSession("app1", "ses1", "sig1");
-    svc->preprocessOfflineStatus("app1", PING_FAILED, fastring("msg"));
+    svc->preprocessOfflineStatus("app1", PING_FAILED, std::string("msg"));
     ASSERT_FALSE(svc->_sessions.isEmpty());
     ASSERT_FALSE(svc->_offline_status.isEmpty());
 

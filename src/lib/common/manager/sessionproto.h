@@ -1,4 +1,4 @@
-﻿// SPDX-FileCopyrightText: 2023 - 2026 UnionTech Software Technology Co., Ltd.
+// SPDX-FileCopyrightText: 2023 - 2026 UnionTech Software Technology Co., Ltd.
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -29,6 +29,10 @@ enum CallResult {
     DO_FAILED
 };
 
+// Discovery probe (APPLY_INFO in cooconstrants.h). The session layer allows
+// this one before authentication and answers with public device data only.
+constexpr int SESSION_APPLY_INFO = 100;
+
 typedef enum dt_type_t {
     REQ_LOGIN = 1000,
     REQ_FREE_SPACE = 1001,
@@ -49,21 +53,33 @@ typedef enum apply_flag_t {
 } ApplyFlag;
 
 
-using ExtenMessageHandler = std::function<bool(int32_t mask, const picojson::value &json_value, std::string *res_msg)>;
+// @authenticated is true once the connection logged in. Unauthenticated peers
+// may only probe device info (APPLY_INFO), which must not contain user data.
+using ExtenMessageHandler = std::function<bool(int32_t mask, const picojson::value &json_value,
+                                               bool authenticated, std::string *res_msg)>;
 
 struct LoginMessage {
     std::string name;
+    // Empty asks the peer to pair (the local user confirms). A non-empty value
+    // is the v25 shared PIN or a token issued by the peer.
     std::string auth;
+    // Display name shown in the pairing confirmation on the peer. Optional so
+    // older peers remain compatible.
+    std::string nick;
 
     void from_json(const picojson::value& _x_) {
         name = _x_.get("name").to_str();
         auth = _x_.get("auth").to_str();
+        nick.clear();
+        if (_x_.contains("nick") && _x_.get("nick").is<std::string>())
+            nick = _x_.get("nick").get<std::string>();
     }
 
     picojson::value as_json() const {
         picojson::object obj;
         obj["name"] = picojson::value(name);
         obj["auth"] = picojson::value(auth);
+        obj["nick"] = picojson::value(nick);
         return picojson::value(obj);
     }
 };

@@ -1,4 +1,4 @@
-﻿// SPDX-FileCopyrightText: 2023 UnionTech Software Technology Co., Ltd.
+// SPDX-FileCopyrightText: 2023 - 2026 UnionTech Software Technology Co., Ltd.
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -11,10 +11,9 @@
 #include <service/rpc/remoteservice.h>
 #include <ipc/proto/chan.h>
 #include "common/constant.h"
-#include "co/co.h"
-#include "co/fs.h"
-#include "co/time.h"
+#include "common/compatbase.h"
 #include <QMutex>
+#include <atomic>
 #include <QReadWriteLock>
 
 class RemoteServiceSender;
@@ -25,9 +24,9 @@ class TransferJob : public QObject
 public:   
     explicit TransferJob(QObject *parent = nullptr);
     ~TransferJob() override;
-    bool initRpc(fastring target, uint16 port);
-    void initJob(fastring appname, fastring targetappname, int id, fastring path, bool sub, fastring savedir, bool write);
-    bool createFile(const fastring fullpath, const bool isDir);
+    bool initRpc(std::string target, uint16 port);
+    void initJob(std::string appname, std::string targetappname, int id, std::string path, bool sub, std::string savedir, bool write);
+    bool createFile(const std::string fullpath, const bool isDir);
 
     void start();
     void stop(const bool notify = true);
@@ -35,7 +34,7 @@ public:
     bool ended();
     bool isRunning();
     bool isWriteJob();
-    fastring getAppName();
+    std::string getAppName();
 
     void cancel(bool notify = false);
 
@@ -61,7 +60,7 @@ signals:
 public slots:
 
 private:
-    fastring getSubdir(const char *path, const char *root);
+    std::string getSubdir(const char *path, const char *root);
 
     void handleBlockQueque();
 
@@ -70,15 +69,15 @@ private:
     void handleTransStatus(int status, const FileInfo &info);
     QSharedPointer<FSDataBlock> popQueue();
     int queueCount() const;
-    void setFileName(const fastring &name, const fastring &acName);
-    fastring acName(const fastring &name);
-    fastring getSaveFullpath(const fastring &rootdir, const fastring &filename);
+    void setFileName(const std::string &name, const std::string &acName);
+    std::string acName(const std::string &name);
+    std::string getSaveFullpath(const std::string &rootdir, const std::string &filename);
 
-    void scanPath(const fastring root,const fastring path, const bool acTotal);
-    void readPath(fastring path, fastring root, const bool acTotal);
-    bool readFile(fastring filepath, int fileid, fastring subdir, const bool acTotal);
-    void readFileBlock(fastring filepath, int fileid, const fastring subname, const  bool acTotal);
-    bool writeAndCreateFile(const QSharedPointer<FSDataBlock> block, const fastring fullpath);
+    void scanPath(const std::string root,const std::string path, const bool acTotal);
+    void readPath(std::string path, std::string root, const bool acTotal);
+    bool readFile(std::string filepath, int fileid, std::string subdir, const bool acTotal);
+    void readFileBlock(std::string filepath, int fileid, const std::string subname, const  bool acTotal);
+    bool writeAndCreateFile(const QSharedPointer<FSDataBlock> block, const std::string fullpath);
     bool sendToRemote(const QSharedPointer<FSDataBlock> block);
     void createSendCounting();
 
@@ -86,7 +85,7 @@ private:
     int _jobid;
     std::atomic_int _fileid = 0;
     std::atomic_int _notify_fileid = 0;
-    int _status = NONE;
+    std::atomic<int> _status { NONE };
     int _queue_empty_times = 0;
     std::atomic_int64_t _total_size = 0;
     std::atomic_int64_t _cur_size = 0;
@@ -100,21 +99,21 @@ private:
     std::atomic_bool _not_notify {false};
 
     uint16 _tar_port{0};
-    fastring _app_name; // //前端应用名
-    fastring _path; // 目录或文件路径
-    fastring _savedir; // 写作业，文件保存的目录
-    fastring _save_fulldir; // 全路径
-    fastring _tar_app_name; // 发送到目标的应用名称
-    fastring _tar_ip;
+    std::string _app_name; // //前端应用名
+    std::string _path; // 目录或文件路径
+    std::string _savedir; // 写作业，文件保存的目录
+    std::string _save_fulldir; // 全路径
+    std::string _tar_app_name; // 发送到目标的应用名称
+    std::string _tar_ip;
     std::atomic_int64_t _device_free_size{ -1 };
 
     mutable QReadWriteLock _queque_mutex;
     QQueue<QSharedPointer<FSDataBlock>> _block_queue;
     QSharedPointer<RemoteServiceSender> _remote;
     QReadWriteLock _file_name_maps_lock;
-    QMap<fastring, fastring> _file_name_maps;
+    QMap<std::string, std::string> _file_name_maps;
     QMutex _send_mutex;
-    fs::file *fx{ nullptr };
+    compat::fs::file *fx{ nullptr };
 };
 
 #endif   // TRANSFERJOB_H

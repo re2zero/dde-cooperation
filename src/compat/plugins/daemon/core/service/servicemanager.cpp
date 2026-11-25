@@ -1,4 +1,4 @@
-﻿// SPDX-FileCopyrightText: 2023 - 2026 UnionTech Software Technology Co., Ltd.
+// SPDX-FileCopyrightText: 2023 - 2026 UnionTech Software Technology Co., Ltd.
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -16,6 +16,7 @@
 
 #include <QCoreApplication>
 #include <QStandardPaths>
+#include <QLocalServer>
 
 ServiceManager::ServiceManager(QObject *parent) : QObject(parent)
 {
@@ -27,7 +28,7 @@ ServiceManager::ServiceManager(QObject *parent) : QObject(parent)
     DaemonConfig::instance()->initPin();
 
     // init the host uuid. no setting then gen a random
-    fastring hostid = DaemonConfig::instance()->getUUID();
+    std::string hostid = DaemonConfig::instance()->getUUID();
     if (hostid.empty()) {
         hostid = Util::genUUID();
         DaemonConfig::instance()->setUUID(hostid.c_str());
@@ -99,7 +100,7 @@ void ServiceManager::localIPCStart()
     }
     DLOG << "Starting IPC service";
     _ipcService = new HandleIpcService;
-    bool ret = _ipcService->listen(ipcName());
+    bool ret = _ipcService->listen(ipcName(), _ipcService, QLocalServer::UserAccessOption);
     if (!ret) {
         ELOG << "Failed to start IPC service";
     } else {
@@ -110,16 +111,19 @@ void ServiceManager::localIPCStart()
             _ipcService, &HandleIpcService::handleSessionSignal, Qt::QueuedConnection);
 }
 
-fastring ServiceManager::genPeerInfo()
+std::string ServiceManager::genPeerInfo()
 {
-    fastring nick = DaemonConfig::instance()->getNickName();
+    std::string nick = DaemonConfig::instance()->getNickName();
     int mode = DaemonConfig::instance()->getMode();
-    co::Json info = {
+    compat::Json info = {
         { "proto_version", UNI_RPC_PROTO },
         { "uuid", DaemonConfig::instance()->getUUID() },
         { "nickname", nick },
-        { "username", Util::getUsername() },
-        { "hostname", Util::getHostname() },
+        // Account and host names are private. Peers that need to identify a
+        // device use the user-chosen nickname instead; authenticated peers
+        // still receive them in the login reply.
+        { "username", "" },
+        { "hostname", "" },
         { "ipv4", Util::getFirstIp() },
         { "share_connect_ip", "" },
         { "port", UNI_RPC_PORT_BASE },
@@ -139,7 +143,7 @@ void ServiceManager::asyncDiscovery()
         DiscoveryJob::instance()->discovererRun();
     });
     QUNIGO([this]() {
-        fastring baseinfo = genPeerInfo();
+        std::string baseinfo = genPeerInfo();
         DiscoveryJob::instance()->announcerRun(baseinfo);
     });
 }

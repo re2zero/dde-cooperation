@@ -1,9 +1,10 @@
-// SPDX-FileCopyrightText: 2026 UnionTech Software Technology Co., Ltd.
+﻿// SPDX-FileCopyrightText: 2026 - 2026 UnionTech Software Technology Co., Ltd.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include <gtest/gtest.h>
 #include "sessionworker.h"
 #include "sessionproto.h"
+#include "peertokenstore.h"
 
 #include "manager/secureconfig.h"
 #include "protoserver.h"
@@ -17,6 +18,7 @@
 
 #include <functional>
 #include <shared_mutex>
+#include <thread>
 
 namespace {
 bool waitFor(const std::function<bool()> &condition, int timeoutMs = 3000)
@@ -36,6 +38,9 @@ protected:
     void SetUp() override
     {
         worker = std::make_shared<SessionWorker>();
+        // Most tests exercise authenticated request handling via the client
+        // side connection id ("c:<ip>").
+        worker->updateLogin("10.0.0.1", true);
     }
     void TearDown() override
     {
@@ -145,7 +150,7 @@ TEST_F(SessionWorkerTest, SetGetRealIPEmpty)
 
 TEST_F(SessionWorkerTest, SetExtMessageHandler)
 {
-    worker->setExtMessageHandler([](int32_t, const picojson::value &, std::string *) {
+    worker->setExtMessageHandler([](int32_t, const picojson::value &, bool, std::string *) {
         return false;
     });
     SUCCEED();
@@ -157,7 +162,7 @@ TEST_F(SessionWorkerTest, OnReceivedMessageEmptyJson)
 {
     auto req = makeMsg(REQ_LOGIN, "");
     proto::OriginMessage resp;
-    worker->onReceivedMessage(req, &resp);
+    worker->onReceivedMessage(req, "c:10.0.0.1", &resp);
     EXPECT_EQ(resp.mask, DO_SUCCESS);
 }
 
@@ -165,7 +170,7 @@ TEST_F(SessionWorkerTest, OnReceivedMessageInvalidJson)
 {
     auto req = makeMsg(REQ_LOGIN, "not a json");
     proto::OriginMessage resp;
-    worker->onReceivedMessage(req, &resp);
+    worker->onReceivedMessage(req, "c:10.0.0.1", &resp);
     EXPECT_EQ(resp.mask, DO_SUCCESS);
 }
 
@@ -183,7 +188,7 @@ TEST_F(SessionWorkerTest, OnReceivedMessageLoginSuccess)
 
     QSignalSpy spy(worker.get(), &SessionWorker::onConnectChanged);
     proto::OriginMessage resp;
-    worker->onReceivedMessage(req, &resp);
+    worker->onReceivedMessage(req, "c:10.0.0.1", &resp);
     EXPECT_EQ(resp.mask, DO_SUCCESS);
     EXPECT_FALSE(resp.json_msg.empty());
     // should emit LOGIN_SUCCESS
@@ -204,7 +209,7 @@ TEST_F(SessionWorkerTest, OnReceivedMessageLoginDenied)
     QSignalSpy spy(worker.get(), &SessionWorker::onConnectChanged);
     QSignalSpy rejectSpy(worker.get(), &SessionWorker::onRejectConnection);
     proto::OriginMessage resp;
-    worker->onReceivedMessage(req, &resp);
+    worker->onReceivedMessage(req, "c:10.0.0.1", &resp);
 
     ASSERT_EQ(spy.count(), 1);
     auto args = spy.takeFirst();
@@ -219,13 +224,13 @@ TEST_F(SessionWorkerTest, OnReceivedMessageFreeSpace)
     auto req = makeMsg(REQ_FREE_SPACE, msg.as_json().serialize());
 
     proto::OriginMessage resp;
-    worker->onReceivedMessage(req, &resp);
+    worker->onReceivedMessage(req, "c:10.0.0.1", &resp);
     EXPECT_EQ(resp.mask, DO_SUCCESS);
 }
 
 TEST_F(SessionWorkerTest, OnReceivedMessageTransDatasNoAuth)
 {
-    // without pin/host login, REQ_TRANS_DATAS should be rejected
+    // Accept a connection that never logged in: REQ_TRANS_DATAS is rejected
     TransDataMessage msg;
     msg.id = "192.168.1.1";
     msg.names = {"file.txt"};
@@ -235,14 +240,13 @@ TEST_F(SessionWorkerTest, OnReceivedMessageTransDatasNoAuth)
     auto req = makeMsg(REQ_TRANS_DATAS, msg.as_json().serialize());
 
     proto::OriginMessage resp;
-    worker->onReceivedMessage(req, &resp);
-    EXPECT_EQ(resp.mask, DO_SUCCESS);
+    EXPECT_FALSE(worker->onReceivedMessage(req, "s:10.0.0.9:4242", &resp));
+    EXPECT_TRUE(resp.json_msg.empty());
 }
 
 TEST_F(SessionWorkerTest, OnReceivedMessageTransDatasWithAuth)
 {
-    // set pin and login first
-    worker->updatePincode("9999");
+    // The peer has logged in; the session is bound to the connection id.
     worker->updateLogin("10.0.0.1", true);
 
     TransDataMessage msg;
@@ -256,7 +260,7 @@ TEST_F(SessionWorkerTest, OnReceivedMessageTransDatasWithAuth)
     QSignalSpy dataSpy(worker.get(), &SessionWorker::onTransData);
     QSignalSpy countSpy(worker.get(), &SessionWorker::onTransCount);
     proto::OriginMessage resp;
-    worker->onReceivedMessage(req, &resp);
+    worker->onReceivedMessage(req, "c:10.0.0.1", &resp);
 
     // should emit onTransData and onTransCount (size > 0)
     EXPECT_EQ(dataSpy.count(), 1);
@@ -273,7 +277,7 @@ TEST_F(SessionWorkerTest, OnReceivedMessageTransCancel)
 
     QSignalSpy spy(worker.get(), &SessionWorker::onCancelJob);
     proto::OriginMessage resp;
-    worker->onReceivedMessage(req, &resp);
+    worker->onReceivedMessage(req, "c:10.0.0.1", &resp);
 
     EXPECT_EQ(spy.count(), 1);
 }
@@ -282,7 +286,7 @@ TEST_F(SessionWorkerTest, OnReceivedMessageCastInfo)
 {
     auto req = makeMsg(CAST_INFO, R"({"info":"test"})");
     proto::OriginMessage resp;
-    worker->onReceivedMessage(req, &resp);
+    worker->onReceivedMessage(req, "c:10.0.0.1", &resp);
     EXPECT_EQ(resp.mask, DO_SUCCESS);
 }
 
@@ -297,7 +301,7 @@ TEST_F(SessionWorkerTest, OnReceivedMessageInfoTransCount)
 
     QSignalSpy spy(worker.get(), &SessionWorker::onTransCount);
     proto::OriginMessage resp;
-    worker->onReceivedMessage(req, &resp);
+    worker->onReceivedMessage(req, "c:10.0.0.1", &resp);
 
     EXPECT_EQ(spy.count(), 1);
 }
@@ -306,22 +310,23 @@ TEST_F(SessionWorkerTest, OnReceivedMessageUnknownType)
 {
     auto req = makeMsg(99999, R"({"test":"data"})");
     proto::OriginMessage resp;
-    worker->onReceivedMessage(req, &resp);
+    worker->onReceivedMessage(req, "c:10.0.0.1", &resp);
     EXPECT_EQ(resp.mask, DO_SUCCESS);
 }
 
 TEST_F(SessionWorkerTest, OnReceivedMessageExternalHandlerHandled)
 {
     bool handlerCalled = false;
-    worker->setExtMessageHandler([&handlerCalled](int32_t mask, const picojson::value &, std::string *res) {
+    worker->setExtMessageHandler([&handlerCalled](int32_t mask, const picojson::value &,
+                                                  bool authenticated, std::string *res) {
         handlerCalled = true;
         *res = R"({"handled":true})";
         return true;
     });
 
-    auto req = makeMsg(REQ_LOGIN, R"({"name":"x","auth":"y"})");
+    auto req = makeMsg(SESSION_APPLY_INFO, R"({"nick":"x"})");
     proto::OriginMessage resp;
-    worker->onReceivedMessage(req, &resp);
+    EXPECT_TRUE(worker->onReceivedMessage(req, "s:10.0.0.9:4242", &resp));
 
     EXPECT_TRUE(handlerCalled);
     EXPECT_EQ(resp.json_msg, R"({"handled":true})");
@@ -330,22 +335,144 @@ TEST_F(SessionWorkerTest, OnReceivedMessageExternalHandlerHandled)
 TEST_F(SessionWorkerTest, OnReceivedMessageExternalHandlerNotHandled)
 {
     bool handlerCalled = false;
-    worker->setExtMessageHandler([&handlerCalled](int32_t mask, const picojson::value &, std::string *) {
+    worker->setExtMessageHandler([&handlerCalled](int32_t mask, const picojson::value &,
+                                                  bool authenticated, std::string *) {
         handlerCalled = true;
         return false;
     });
 
-    worker->updatePincode("1234");
-    LoginMessage loginMsg;
-    loginMsg.name = "host";
-    loginMsg.auth = "MTIzNA==";
-    auto req = makeMsg(REQ_LOGIN, loginMsg.as_json().serialize());
-
+    auto req = makeMsg(SESSION_APPLY_INFO, R"({"nick":"x"})");
     proto::OriginMessage resp;
-    worker->onReceivedMessage(req, &resp);
+    EXPECT_TRUE(worker->onReceivedMessage(req, "s:10.0.0.9:4242", &resp));
 
     EXPECT_TRUE(handlerCalled);
-    // should proceed to normal handling
+}
+
+// ---- v25 TOFU / token authentication ----
+
+namespace {
+std::string b64(const QString &text)
+{
+    const QByteArray encoded = text.toUtf8().toBase64();
+    return std::string(encoded.constData(), static_cast<size_t>(encoded.size()));
+}
+
+std::string loginJson(const QString &auth, const QString &nick = QStringLiteral("peer"))
+{
+    LoginMessage login;
+    login.name = "10.0.0.50";
+    login.auth = b64(auth);
+    login.nick = nick.toStdString();
+    return login.as_json().serialize();
+}
+
+std::string responseAuth(const proto::OriginMessage &resp)
+{
+    picojson::value v;
+    if (!picojson::parse(v, resp.json_msg).empty())
+        return {};
+    LoginMessage login;
+    login.from_json(v);
+    return login.auth;
+}
+}   // namespace
+
+TEST_F(SessionWorkerTest, LoginWithoutTokenNeedsConfirmation)
+{
+    worker->setPairingTimeoutMs(0);
+    auto req = makeMsg(REQ_LOGIN, loginJson(QString()));
+    proto::OriginMessage resp;
+    EXPECT_TRUE(worker->onReceivedMessage(req, "s:10.0.0.50:4000", &resp));
+    EXPECT_TRUE(responseAuth(resp).empty());
+    EXPECT_FALSE(worker->isSessionAuthenticated("s:10.0.0.50:4000"));
+}
+
+TEST_F(SessionWorkerTest, LoginWithIssuedTokenBindsTheConnection)
+{
+    const QString token = PeerTokenStore::generateToken();
+    PeerTokenStore::instance()->setIssuedToken(QStringLiteral("10.0.0.50"), token);
+
+    auto req = makeMsg(REQ_LOGIN, loginJson(token));
+    proto::OriginMessage resp;
+    EXPECT_TRUE(worker->onReceivedMessage(req, "s:10.0.0.50:4000", &resp));
+    EXPECT_EQ(token.toStdString(), responseAuth(resp));
+    EXPECT_TRUE(worker->isSessionAuthenticated("s:10.0.0.50:4000"));
+    // Authentication is per connection, not only per source address.
+    EXPECT_FALSE(worker->isSessionAuthenticated("s:10.0.0.50:4001"));
+}
+
+TEST_F(SessionWorkerTest, PairingOverRealConnectionIssuesToken)
+{
+    auto service = std::make_shared<AsioService>();
+    service->Start();
+
+    std::shared_ptr<ProtoServer> server;
+    int port = 0;
+    bool started = false;
+    for (int attempt = 0; attempt < 10 && !started; ++attempt) {
+        port = 21000 + QRandomGenerator::global()->bounded(1000);
+        server = std::make_shared<ProtoServer>(service, SecureConfig::serverContext(), port);
+        server->setCallbacks(worker);
+        started = server->Start();
+    }
+    ASSERT_TRUE(started);
+    worker->_server = server;
+    worker->setPairingTimeoutMs(3000);
+    worker->updatePincode(QString());
+
+    // The request is handled on an ASIO thread and blocks until the user
+    // answers; answer from another thread.
+    QObject::connect(worker.get(), &SessionWorker::pairingRequested, worker.get(),
+                     [this](const QString &ip, const QString &) {
+                         std::thread([this, ip] {
+                             QThread::msleep(50);
+                             worker->replyPairing(ip, true);
+                         }).detach();
+                     },
+                     Qt::DirectConnection);
+
+    auto client = std::make_shared<ProtoClient>(service, SecureConfig::clientContext(),
+                                                "127.0.0.1", port);
+    client->ConnectAsync();
+    ASSERT_TRUE(waitFor([&] { return client->IsHandshaked(); }));
+
+    proto::OriginMessage req;
+    req.mask = REQ_LOGIN;
+    req.json_msg = loginJson(QString());
+    const proto::OriginMessage resp = client->syncRequest("127.0.0.1", req);
+
+    LoginMessage login;
+    picojson::value v;
+    ASSERT_TRUE(picojson::parse(v, resp.json_msg).empty());
+    login.from_json(v);
+    EXPECT_FALSE(login.auth.empty());
+    EXPECT_EQ(login.auth, PeerTokenStore::instance()->issuedToken(QStringLiteral("127.0.0.1")).toStdString());
+
+    client->DisconnectAndStop();
+    server->Stop();
+    worker->_server.reset();
+    service->Stop();
+    PeerTokenStore::instance()->setIssuedToken(QStringLiteral("127.0.0.1"), QString());
+}
+
+TEST_F(SessionWorkerTest, LoginWithWrongTokenIsRateLimited)
+{
+    const QString ip = QStringLiteral("10.0.0.60");
+    for (int i = 0; i < 5; ++i) {
+        auto req = makeMsg(REQ_LOGIN, loginJson(QStringLiteral("wrong-token")));
+        proto::OriginMessage resp;
+        EXPECT_TRUE(worker->onReceivedMessage(req, "s:10.0.0.60:4000", &resp));
+        EXPECT_TRUE(responseAuth(resp).empty());
+    }
+    EXPECT_TRUE(worker->isBlocked(ip));
+
+    // A blocked source cannot log in even with the right token.
+    const QString token = PeerTokenStore::generateToken();
+    PeerTokenStore::instance()->setIssuedToken(ip, token);
+    auto req = makeMsg(REQ_LOGIN, loginJson(token));
+    proto::OriginMessage resp;
+    EXPECT_TRUE(worker->onReceivedMessage(req, "s:10.0.0.60:4000", &resp));
+    EXPECT_TRUE(responseAuth(resp).empty());
 }
 
 // ---- onStateChanged tests ----

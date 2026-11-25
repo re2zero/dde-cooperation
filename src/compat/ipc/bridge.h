@@ -1,11 +1,11 @@
-// SPDX-FileCopyrightText: 2023 UnionTech Software Technology Co., Ltd.
+// SPDX-FileCopyrightText: 2023 - 2026 UnionTech Software Technology Co., Ltd.
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #ifndef BRIDGE_H
 #define BRIDGE_H
 
-#include <co/fastring.h>
+#include "common/compatbase.h"
 
 typedef enum req_type_t {
     IPC_PING = 10,
@@ -27,6 +27,7 @@ typedef enum req_type_t {
     FRONT_DISCONNECT_CB = 114, // 断开连接
     FRONT_SHARE_DISAPPLY_CONNECT = 115, // 收到取消申请共享连接
     FRONT_SEARCH_IP_DEVICE_RESULT = 116, // 搜索device的结果
+    FRONT_LOGIN_CONFIRM = 117, // 兼容协议：请求本机用户确认远端登录
     BACK_GET_DISCOVERY = 200,
     BACK_GET_PEER = 201,
     BACK_GET_PASSWORD = 202,
@@ -65,7 +66,7 @@ typedef enum res_type_t {
 
 struct BridgeJsonData {
     uint32_t type; // json数据类型：ReqType or ResType
-    fastring json; // json数据结构实例
+    std::string json; // json数据结构实例
 };
 
 #endif // BRIDGE_H

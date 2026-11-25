@@ -1,4 +1,4 @@
-﻿// SPDX-FileCopyrightText: 2023 UnionTech Software Technology Co., Ltd.
+// SPDX-FileCopyrightText: 2023 - 2026 UnionTech Software Technology Co., Ltd.
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -125,7 +125,7 @@ void SendIpcService::handleRemoveJob(const QString appName, const int jobId)
     s->removeJob(jobId);
 }
 
-void SendIpcService::preprocessOfflineStatus(const QString appName, int32 type, const fastring msg)
+void SendIpcService::preprocessOfflineStatus(const QString appName, int32 type, const std::string msg)
 {
     //缓存一下要通知的状态，如果3秒未更新，才发送通知
     SendStatus st;
@@ -187,7 +187,7 @@ void SendIpcService::handleNodeChanged(bool found, QString info)
     for (auto i = _sessions.begin(); i != _sessions.end();) {
         QSharedPointer<Session> s = *i;
         if (s->alive()) {
-            fastring nodeinfo(info.toStdString());
+            std::string nodeinfo(info.toStdString());
             if (!found && s->getName() == "dde-cooperation") {
                 WLOG << "The node losted from discovery.";
                 // FIXME: The discovery lost mutli-UDP on some WIFI(unstable)
@@ -195,7 +195,7 @@ void SendIpcService::handleNodeChanged(bool found, QString info)
             }
 
             // cbPeerInfo {GenericResult}
-            co::Json req = {
+            compat::Json req = {
                { "id", 0 },
                { "result", found ? 1 : 0 },
                { "msg", nodeinfo },
@@ -212,7 +212,7 @@ void SendIpcService::handleNodeChanged(bool found, QString info)
             i = _sessions.erase(i);
 
             //remove the frontend app register info
-            fastring name = s->getName().toStdString();
+            std::string name = s->getName().toStdString();
             DiscoveryJob::instance()->removeAppbyName(name);
         }
     }

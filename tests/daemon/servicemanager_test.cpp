@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2026 UnionTech Software Technology Co., Ltd.
+// SPDX-FileCopyrightText: 2026 - 2026 UnionTech Software Technology Co., Ltd.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include <gtest/gtest.h>
@@ -6,7 +6,7 @@
 #include "service/ipc/handleipcservice.h"
 #include "service/rpc/handlerpcservice.h"
 #include "stub.h"
-#include "co/json.h"
+#include "common/compatbase.h"
 #include "utils/config.h"
 #include "ipc/proto/comstruct.h"
 #include "utils/utils.h"
@@ -15,14 +15,14 @@
 // Void member functions: a no-op free function is enough; the implicit
 // `this` argument is simply ignored by the patched callee.
 static void fakeNoop() {}
-// genPeerInfo() returns fastring by value; on x86-64 SysV the hidden return
+// genPeerInfo() returns std::string by value; on x86-64 SysV the hidden return
 // pointer occupies the same slot the member function uses, so a free function
-// returning fastring lines up with the member's ABI.
-static fastring fakeGenPeerInfoPeer()
+// returning std::string lines up with the member's ABI.
+static std::string fakeGenPeerInfoPeer()
 {
     return "peer";
 }
-static fastring fakeGenPeerInfoEmpty()
+static std::string fakeGenPeerInfoEmpty()
 {
     return "";
 }
@@ -97,7 +97,7 @@ TEST(ServiceManagerTest, GenPeerInfoStubbed)
     stub.set(ADDR(ServiceManager, genPeerInfo), fakeGenPeerInfoPeer);
 
     ServiceManager sm;
-    fastring info = sm.genPeerInfo();
+    std::string info = sm.genPeerInfo();
     EXPECT_EQ(info, "peer");
 }
 
@@ -134,17 +134,17 @@ TEST(ServiceManagerTest, GenPeerInfoReal)
     stub.set((void *)deepin_cross::CommonUitls::getFirstIp, fakeFirstIpStd);
 
     ServiceManager sm;
-    fastring info = sm.genPeerInfo();
+    std::string info = sm.genPeerInfo();
     EXPECT_FALSE(info.empty());
 
-    co::Json j;
+    compat::Json j;
     ASSERT_TRUE(j.parse_from(info));
     EXPECT_TRUE(j.is_object());
     NodePeerInfo npi;
     npi.from_json(j);
     // uuid is generated during construction if absent, so it must be non-empty
     EXPECT_FALSE(npi.uuid.empty());
-    EXPECT_EQ(npi.ipv4, fastring("1.2.3.4"));
+    EXPECT_EQ(npi.ipv4, std::string("1.2.3.4"));
 }
 
 // 8. IpcNameReal: ipcName() is private; reached via -fno-access-control.
@@ -226,7 +226,7 @@ TEST(ServiceManagerCovTest, ConstructWithEmptyUuidGen)
     Stub stub;
     applyServiceManagerStubs(stub);
     ServiceManager sm;
-    fastring uid = DaemonConfig::instance()->getUUID();
+    std::string uid = DaemonConfig::instance()->getUUID();
     EXPECT_FALSE(uid.empty());
 }
 
@@ -236,5 +236,5 @@ TEST(ServiceManagerCovTest, ConstructWithExistingUuid)
     Stub stub;
     applyServiceManagerStubs(stub);
     ServiceManager sm;
-    EXPECT_EQ(DaemonConfig::instance()->getUUID(), fastring("existing-uid-xyz"));
+    EXPECT_EQ(DaemonConfig::instance()->getUUID(), std::string("existing-uid-xyz"));
 }

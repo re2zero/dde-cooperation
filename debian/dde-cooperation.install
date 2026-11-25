@@ -6,8 +6,6 @@ usr/lib/*/libcooperation-core.so*
 usr/lib/*/libQtZeroConf.so*
 usr/lib/*/libslotipc.so*
 usr/lib/*/libdde-cooperation-framework.so*
-usr/lib/*/libco.so*
-usr/lib/*/libzrpc.so*
 usr/lib/*/dde-cooperation/plugins/daemon/libdaemon-core.so
 usr/share/dde-cooperation/translations/*.qm
 usr/share/dde-cooperation/config.conf

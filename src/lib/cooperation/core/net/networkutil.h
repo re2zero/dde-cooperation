@@ -55,6 +55,10 @@ public:
     bool isTunnelForwarding() const;
 
     QString deviceInfoStr();
+    // Minimal public device info for unauthenticated discovery.
+    QString discoveryInfoStr();
+    // Answer a v25 pairing confirmation from the frontend.
+    void replyPairingConfirm(const QString &ip, bool agree);
 
     bool isCurrentlyCooperating();
 
@@ -77,6 +81,7 @@ public slots:
     void updateStorageConfig(const QString &value);
 
 private:
+    friend class NetworkUtilPrivate;
     explicit NetworkUtil(QObject *parent = nullptr);
     ~NetworkUtil();
 

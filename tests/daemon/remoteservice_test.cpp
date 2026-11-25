@@ -1,7 +1,10 @@
-// SPDX-FileCopyrightText: 2026 UnionTech Software Technology Co., Ltd.
+﻿// SPDX-FileCopyrightText: 2026 - 2026 UnionTech Software Technology Co., Ltd.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include <gtest/gtest.h>
+#include <QTcpServer>
+#include <QTcpSocket>
+#include <QHostAddress>
 #include <QSharedPointer>
 #include "service/rpc/remoteservice.h"
 #include "service/comshare.h"
@@ -92,20 +95,25 @@ TEST(RemoteServiceImplTest, DefaultConstructor)
     SUCCEED();
 }
 
-// ZRpcClientExecutor - constructor with localhost (will try to connect but fail gracefully)
-TEST(ZRpcClientExecutorTest, ConstructorLocalhost)
+// CompatRpcExecutor - constructor with localhost (will try to connect but
+// fail gracefully)
+TEST(CompatRpcExecutorTest, ConstructorLocalhost)
 {
     // Just test construction/destruction doesn't crash
-    ZRpcClientExecutor exec("127.0.0.1", 51597, false);
-    EXPECT_EQ(exec.targetIP(), QString("127.0.0.1"));
-    EXPECT_EQ(exec.targetPort(), (uint16)51597);
+    compat_rpc::CompatRpcExecutor exec("127.0.0.1", 51597, false);
+    EXPECT_EQ(exec.targetIP(), std::string("127.0.0.1"));
+    EXPECT_EQ(exec.targetPort(), (uint16_t)51597);
 }
 
-TEST(ZRpcClientExecutorTest, ChanAndControlNotNull)
+TEST(CompatRpcExecutorTest, CallFailsWithoutServer)
 {
-    ZRpcClientExecutor exec("127.0.0.1", 51597, false);
-    EXPECT_NE(exec.chan(), nullptr);
-    EXPECT_NE(exec.control(), nullptr);
+    compat_rpc::CompatRpcExecutor exec("127.0.0.1", 51597, false);
+    compat_rpc::RpcController controller;
+    ProtoData request;
+    ProtoData response;
+    EXPECT_FALSE(exec.Call(&controller, request, &response));
+    EXPECT_NE(0, controller.ErrorCode());
+    EXPECT_FALSE(controller.ErrorText().empty());
 }
 
 // ---- Extended coverage ----
@@ -174,17 +182,34 @@ TEST(RemoteServiceCovTest, DoSendProtoMsgRealFail)
 
 TEST(RemoteServiceCovTest, DoSendProtoMsgTransExecutor)
 {
+    QTcpServer probe;
+    if (!probe.listen(QHostAddress::LocalHost, 51598))
+        GTEST_SKIP() << "port 51598 already in use (real daemon running)";
+    probe.close();
     RemoteServiceSender sender("app", "127.0.0.1", 51598, true);
     SendResult res = sender.doSendProtoMsg(FS_DATA, "{}", QByteArray());
     EXPECT_EQ(res.errorType, INVOKE_FAIL);
 }
 
-TEST(RemoteServiceBinderCovTest, StartRpcListenSkipped)
+TEST(RemoteServiceBinderCovTest, StartRpcListenWithoutCertificate)
 {
-    // startRpcListen requires valid SSL certs; calling with bad paths causes
-    // a fatal abort in the zrpc SSL layer, so we only verify the binder exists.
+    // A missing certificate only disables the TLS variant: v20 clients on
+    // current packages speak plain TCP, so the listener must still come up.
+    QTcpServer probe;
+    ASSERT_TRUE(probe.listen(QHostAddress::LocalHost, 0));
+    const quint16 port = probe.serverPort();
+    probe.close();
+
     RemoteServiceBinder binder;
+    binder.startRpcListen("/nonexistent/compat-cert.pem", "/nonexistent/compat-cert.pem",
+                          port, nullptr);
     EXPECT_FALSE(binder.checkConneted());
+
+    QTcpSocket socket;
+    socket.connectToHost(QHostAddress::LocalHost, port);
+    EXPECT_TRUE(socket.waitForConnected(3000))
+            << "plain listener did not start without a certificate";
+    socket.abort();
 }
 
 TEST(RemoteServiceCovTest, ClearLongExecutorAfterCreate)
@@ -206,6 +231,10 @@ TEST(RemoteServiceCovTest, ClearExecutorAfterCreate)
 
 TEST(RemoteServiceCovTest, SetIpInfoDifferentThenSend)
 {
+    QTcpServer probe;
+    if (!probe.listen(QHostAddress::LocalHost, 51598))
+        GTEST_SKIP() << "port 51598 already in use (real daemon running)";
+    probe.close();
     RemoteServiceSender sender("app", "127.0.0.1", 51597, false);
     sender.setIpInfo("127.0.0.2", 51598);
     EXPECT_EQ(sender.remoteIP(), QString("127.0.0.2"));

@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2026 UnionTech Software Technology Co., Ltd.
+// SPDX-FileCopyrightText: 2026 - 2026 UnionTech Software Technology Co., Ltd.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include <gtest/gtest.h>
@@ -16,7 +16,7 @@ static void fakeManageDaemonProcess(const QString &) {}
 
 // Fakes for the ServiceManager members touched by start() / its constructor.
 static void fakeNoop() {}
-static fastring fakeGenPeerInfoEmpty()
+static std::string fakeGenPeerInfoEmpty()
 {
     return "";
 }

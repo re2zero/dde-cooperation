@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2026 UnionTech Software Technology Co., Ltd.
+﻿// SPDX-FileCopyrightText: 2026 - 2026 UnionTech Software Technology Co., Ltd.
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -29,11 +29,13 @@ bool waitFor(const std::function<bool()> &condition, int timeoutMs = 3000)
 class ServerCallbacks : public SessionCallInterface
 {
 public:
-    void onReceivedMessage(const proto::OriginMessage &request, proto::OriginMessage *response) override
+    bool onReceivedMessage(const proto::OriginMessage &request, const std::string &,
+                           proto::OriginMessage *response) override
     {
         response->id = request.id;
         response->mask = request.mask;
         response->json_msg = R"({"ok":true})";
+        return true;
     }
 
     bool onStateChanged(int state, std::string &msg) override

@@ -6,6 +6,9 @@
 #define COO_CONSTRANTS_H
 
 #define COO_SESSION_PORT 51598
+// v25 peers, including released builds, authenticate the session with this
+// shared PIN. It is kept so old and new clients interoperate; the v20 compat
+// daemon has its own per-peer authentication.
 #define COO_HARD_PIN "515616"
 
 typedef enum apply_type_t {

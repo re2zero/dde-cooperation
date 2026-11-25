@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2023 UnionTech Software Technology Co., Ltd.
+// SPDX-FileCopyrightText: 2023 - 2026 UnionTech Software Technology Co., Ltd.
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -7,8 +7,7 @@
 
 #include <QString>
 
-#include <co/flag.h>
-#include <co/log.h>
+#include "common/compatbase.h"
 
 namespace deepin_cross {
 class CommonUitls

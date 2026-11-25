@@ -1,4 +1,4 @@
-﻿// SPDX-FileCopyrightText: 2023 - 2026 UnionTech Software Technology Co., Ltd.
+// SPDX-FileCopyrightText: 2023 - 2026 UnionTech Software Technology Co., Ltd.
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -43,16 +43,16 @@ bool JobManager::isTransferConfirmed(const QString &appName)
 
 bool JobManager::handleRemoteRequestJob(QString json, QString *targetAppName)
 {
-    co::Json info;
+    compat::Json info;
     if (!info.parse_from(json.toStdString())) {
         return false;
     }
     FileTransJob fsjob;
     fsjob.from_json(info);
     int32 jobId = fsjob.job_id;
-    fastring savedir = fsjob.save_path;
-    fastring appName = fsjob.app_who;
-    fastring tarAppname = fsjob.targetAppname;
+    std::string savedir = fsjob.save_path;
+    std::string appName = fsjob.app_who;
+    std::string tarAppname = fsjob.targetAppname;
     SendRpcService::instance()->removePing(appName.c_str());
     tarAppname = tarAppname.empty() ? appName : tarAppname;
     if (targetAppName)
@@ -150,7 +150,7 @@ bool JobManager::doJobAction(const uint action, const int jobid)
     return result;
 }
 
-bool JobManager::handleFSData(const co::Json &info, fastring buf, FileTransResponse *reply)
+bool JobManager::handleFSData(const compat::Json &info, std::string buf, FileTransResponse *reply)
 {
     QSharedPointer<FSDataBlock> datablock(new FSDataBlock);
     datablock->from_json(info);
@@ -172,7 +172,7 @@ bool JobManager::handleFSData(const co::Json &info, fastring buf, FileTransRespo
         if (datablock->flags & JobTransFileOp::FILE_COUNTED && job->freeBytes() < datablock->data_size) {
             return false;
         } else if (datablock->flags & JobTransFileOp::FIlE_DIR_CREATE || datablock->flags & JobTransFileOp::FIlE_CREATE) {
-            co::sleep(10);
+            compat::sleep(10);
             job = _transjob_recvs.value(jobId);
             if (job.isNull() || job->ended()) {
                 LOG << "create dir/file failed.";
@@ -186,7 +186,7 @@ bool JobManager::handleFSData(const co::Json &info, fastring buf, FileTransRespo
     return true;
 }
 
-bool JobManager::handleCancelJob(co::Json &info, FileTransResponse *reply)
+bool JobManager::handleCancelJob(compat::Json &info, FileTransResponse *reply)
 {
     FileTransJobAction obj;
     obj.from_json(info);
@@ -228,12 +228,12 @@ bool JobManager::handleCancelJob(co::Json &info, FileTransResponse *reply)
     return result;
 }
 
-bool JobManager::handleTransReport(co::Json &info, FileTransResponse *reply)
+bool JobManager::handleTransReport(compat::Json &info, FileTransResponse *reply)
 {
     FSReport obj;
     obj.from_json(info);
     int32 jobId = obj.job_id;
-    fastring path = obj.path;
+    std::string path = obj.path;
     if (reply) {
         reply->id = jobId;
         reply->name = path;
@@ -286,13 +286,13 @@ bool JobManager::handleTransReport(co::Json &info, FileTransResponse *reply)
 void JobManager::handleFileTransStatus(QString appname, int status, QString fileinfo)
 {
     //DLOG << "notify file trans status to:" << appname.toStdString();
-    co::Json infojson;
+    compat::Json infojson;
     infojson.parse_from(fileinfo.toStdString());
     FileInfo filejob;
     filejob.from_json(infojson);
 
     //notifyFileStatus {FileStatus}
-    co::Json req = {
+    compat::Json req = {
         { "job_id", filejob.job_id },
         { "file_id", filejob.file_id },
         { "name", filejob.name },
@@ -310,7 +310,7 @@ void JobManager::handleJobTransStatus(QString appname, int jobid, int status, QS
 {
     //DLOG << "notify file trans status to:" << appname.toStdString() << " jobid=" << jobid;
     //cbTransStatus {GenericResult}
-    co::Json req = {
+    compat::Json req = {
         { "id", jobid },
         { "result", status },
         { "msg", savedir.toStdString() },

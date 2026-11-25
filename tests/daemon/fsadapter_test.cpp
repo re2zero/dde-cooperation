@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2026 UnionTech Software Technology Co., Ltd.
+// SPDX-FileCopyrightText: 2026 - 2026 UnionTech Software Technology Co., Ltd.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include <gtest/gtest.h>
@@ -142,7 +142,7 @@ TEST(FSAdapterTest, WriteBlockCreateFlag)
     QTemporaryDir dir;
     ASSERT_TRUE(dir.isValid());
     QString fpath = dir.filePath("wb3.txt");
-    fs::file *fx = nullptr;
+    compat::fs::file *fx = nullptr;
     const char data[] = "newdata";
     bool ret = FSAdapter::writeBlock(fpath.toLocal8Bit().constData(), 0, data, 7, JobTransFileOp::FIlE_CREATE, &fx);
     EXPECT_TRUE(ret);
@@ -153,7 +153,7 @@ TEST(FSAdapterTest, ReacquirePathNonExistentReturnsFalse)
     QTemporaryDir dir;
     ASSERT_TRUE(dir.isValid());
     QString fpath = dir.filePath("notexist.txt");
-    fastring newpath;
+    std::string newpath;
     bool ret = FSAdapter::reacquirePath(fpath.toLocal8Bit().constData(), &newpath);
     // file doesn't exist -> returns false
     EXPECT_FALSE(ret);
@@ -169,11 +169,11 @@ TEST(FSAdapterTest, ReacquirePathExisting)
     f.write("data");
     f.close();
 
-    fastring newpath;
+    std::string newpath;
     bool ret = FSAdapter::reacquirePath(fpath.toLocal8Bit().constData(), &newpath);
     // file exists, should rename -> newpath contains "(1)"
     EXPECT_TRUE(ret);
-    EXPECT_TRUE(newpath.find("(1)") != fastring::npos);
+    EXPECT_TRUE(newpath.find("(1)") != std::string::npos);
 }
 
 // ---- Extended coverage: writeBlock branches ----
@@ -189,7 +189,7 @@ TEST(FSAdapterTest, WriteBlockFlagsCreateFxNotNull)
     QTemporaryDir dir;
     ASSERT_TRUE(dir.isValid());
     QString fpath = dir.filePath("wb_fx.txt");
-    fs::file *fx = new fs::file(fpath.toLocal8Bit().constData(), 'm');
+    compat::fs::file *fx = new compat::fs::file(fpath.toLocal8Bit().constData(), 'm');
     // FIlE_CREATE flag but fx already set -> error path
     const char data[] = "x";
     bool ret = FSAdapter::writeBlock(fpath.toLocal8Bit().constData(), 0, data, 1,
@@ -203,7 +203,7 @@ TEST(FSAdapterTest, WriteBlockFlagsCreateFxNullSizeZero)
     QTemporaryDir dir;
     ASSERT_TRUE(dir.isValid());
     QString fpath = dir.filePath("wb_create.txt");
-    fs::file *fx = nullptr;
+    compat::fs::file *fx = nullptr;
     bool ret = FSAdapter::writeBlock(fpath.toLocal8Bit().constData(), 0, "", 0,
                                      JobTransFileOp::FIlE_CREATE, &fx);
     EXPECT_TRUE(ret);
@@ -216,7 +216,7 @@ TEST(FSAdapterTest, WriteBlockFlagsCreateWithDataAndClose)
     QTemporaryDir dir;
     ASSERT_TRUE(dir.isValid());
     QString fpath = dir.filePath("wb_close.txt");
-    fs::file *fx = nullptr;
+    compat::fs::file *fx = nullptr;
     const char data[] = "hello";
     bool ret = FSAdapter::writeBlock(fpath.toLocal8Bit().constData(), 0, data, 5,
                                      JobTransFileOp::FIlE_CREATE | JobTransFileOp::FILE_CLOSE, &fx);
@@ -229,7 +229,7 @@ TEST(FSAdapterTest, WriteBlockFlagsCreateWriteContinue)
     QTemporaryDir dir;
     ASSERT_TRUE(dir.isValid());
     QString fpath = dir.filePath("wb_cont.txt");
-    fs::file *fx = nullptr;
+    compat::fs::file *fx = nullptr;
     const char data[] = "world";
     // create without close -> fx stays open
     bool ret = FSAdapter::writeBlock(fpath.toLocal8Bit().constData(), 0, data, 5,
@@ -248,7 +248,7 @@ TEST(FSAdapterTest, WriteBlockFxNullNoCreate)
     QTemporaryDir dir;
     ASSERT_TRUE(dir.isValid());
     QString fpath = dir.filePath("wb_nullfx.txt");
-    fs::file *fx = nullptr;
+    compat::fs::file *fx = nullptr;
     // no create flag + null fx -> error
     bool ret = FSAdapter::writeBlock(fpath.toLocal8Bit().constData(), 0, "x", 1,
                                      JobTransFileOp::FIlE_NONE, &fx);

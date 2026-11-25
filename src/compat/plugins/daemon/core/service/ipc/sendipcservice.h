@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2023 UnionTech Software Technology Co., Ltd.
+// SPDX-FileCopyrightText: 2023 - 2026 UnionTech Software Technology Co., Ltd.
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -11,7 +11,7 @@
 #include <QSharedPointer>
 #include <QThread>
 
-#include "co/json.h"
+#include "common/compatbase.h"
 #include "ipc/proto/chan.h"
 
 class Session;
@@ -42,7 +42,7 @@ public slots:
     void handleRemoveJob(const QString appName, const int jobId);
 
     //缓存远端离线消息，可能因某次失败而触发，若3秒内有正常则应取消此消息到前端
-    void preprocessOfflineStatus(const QString appName, int32 type, const fastring msg);
+    void preprocessOfflineStatus(const QString appName, int32 type, const std::string msg);
     void cancelOfflineStatus(const QString appName);
 
     void handleStartOfflineTimer();

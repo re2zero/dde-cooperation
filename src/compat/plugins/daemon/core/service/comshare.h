@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2023 UnionTech Software Technology Co., Ltd.
+// SPDX-FileCopyrightText: 2023 - 2026 UnionTech Software Technology Co., Ltd.
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -7,8 +7,7 @@
 
 #include "common/constant.h"
 #include "message.pb.h"
-#include <co/co.h>
-#include <co/json.h>
+#include "common/compatbase.h"
 
 #include <QList>
 #include <QReadWriteLock>
@@ -46,8 +45,9 @@ typedef enum chan_type_t {
 
 struct IncomeData {
     ChanType type;
-    fastring json; // json数据结构实例
-    fastring buf; // 二进制数据
+    std::string json; // json数据结构实例
+    std::string buf; // 二进制数据
+    std::string peer_ip; // real transport source address of the request
 };
 
 typedef enum communication_type_t {
@@ -56,11 +56,11 @@ typedef enum communication_type_t {
 
 struct OutData {
     ChanType type;
-    fastring json; // json数据结构实例
+    std::string json; // json数据结构实例
 };
 
-extern co::chan<IncomeData> _income_chan;
-extern co::chan<OutData> _outgo_chan;
+extern compat::Channel<IncomeData> _income_chan;
+extern compat::Channel<OutData> _outgo_chan;
 
 const static QList<uint16> clientPorts{
     7790, 7791

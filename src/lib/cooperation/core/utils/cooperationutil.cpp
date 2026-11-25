@@ -1,4 +1,4 @@
-﻿// SPDX-FileCopyrightText: 2023 UnionTech Software Technology Co., Ltd.
+﻿// SPDX-FileCopyrightText: 2023 - 2026 UnionTech Software Technology Co., Ltd.
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -17,6 +17,7 @@
 #include <QStandardPaths>
 #include <QDebug>
 #include <QDir>
+#include <QCoreApplication>
 #include <QTimer>
 
 #include <mutex>
@@ -124,10 +125,13 @@ QVariantMap CooperationUtil::deviceInfo()
 #endif
 
     value = ConfigManager::instance()->appAttribute(AppSettings::GenericGroup, AppSettings::DeviceNameKey);
+    // Never derive the advertised device name from the user name. The default
+    // used to be the home directory name, which leaked the account name to
+    // every peer that probed the device.
     info.insert(AppSettings::DeviceNameKey,
                 value.isValid()
                         ? value.toString()
-                        : QDir(QStandardPaths::standardLocations(QStandardPaths::HomeLocation).value(0)).dirName());
+                        : QCoreApplication::applicationName());
 
     value = ConfigManager::instance()->appAttribute(AppSettings::GenericGroup, AppSettings::PeripheralShareKey);
     info.insert(AppSettings::PeripheralShareKey, value.isValid() ? value.toBool() : true);

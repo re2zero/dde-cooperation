@@ -1,4 +1,4 @@
-﻿// SPDX-FileCopyrightText: 2023 UnionTech Software Technology Co., Ltd.
+// SPDX-FileCopyrightText: 2023 - 2026 UnionTech Software Technology Co., Ltd.
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -8,9 +8,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <regex>
-#include "co/rand.h"
-#include "co/hash.h"
-#include "co/str.h"
+#include "common/compatbase.h"
 #include "common/constant.h"
 #include "common/commonutils.h"
 
@@ -26,13 +24,13 @@ public:
     static std::string genRandPin()
     {
         int pin_len = 6;
-        return std::string(co::randstr("0123456789", pin_len).c_str());
+        return std::string(compat::randstr("0123456789", pin_len).c_str());
     }
 
     static std::string genAuthToken(const char *uuid, const char *pin)
     {
         std::string all = uuid;   // + pin;
-        fastring encodes = base64_encode(all);
+        std::string encodes = compat::base64Encode(all);
         return std::string(encodes.c_str());
     }
 
@@ -40,13 +38,13 @@ public:
 
     static std::string decodeBase64(const char *str)
     {
-        fastring decodes = base64_decode(str);
+        std::string decodes = compat::base64Decode(str);
         return std::string(decodes.c_str());
     }
 
     static std::string encodeBase64(const char *str)
     {
-        fastring encodes = base64_encode(str);
+        std::string encodes = compat::base64Encode(str);
         return std::string(encodes.c_str());
     }
 
@@ -116,11 +114,11 @@ public:
 
     static std::string parseFileName(const char *path)
     {
-        fastring file_name;
-        co::vector<fastring> path_slips = str::split(path, '/');
-        file_name = path_slips.pop_back();
-
-        return std::string(file_name.c_str());
+        const std::vector<std::string> path_slips =
+                compat::str::split(std::string(path ? path : ""), '/');
+        if (path_slips.empty())
+            return {};
+        return path_slips.back();
     }
 };
 

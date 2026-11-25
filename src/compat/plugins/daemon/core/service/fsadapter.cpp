@@ -1,4 +1,4 @@
-﻿// SPDX-FileCopyrightText: 2023 UnionTech Software Technology Co., Ltd.
+// SPDX-FileCopyrightText: 2023 - 2026 UnionTech Software Technology Co., Ltd.
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -8,8 +8,8 @@
 #include "utils/config.h"
 #include "common/constant.h"
 
-#include "co/log.h"
-#include "co/path.h"
+#include "common/compatlog.h"
+#include "common/compatbase.h"
 
 //using namespace deamon_core;
 
@@ -21,69 +21,69 @@ FSAdapter::FSAdapter(QObject *parent)
 int FSAdapter::getFileEntry(const char *path, FileEntry **entry)
 {
     FileEntry *temp = *entry;
-    if (!fs::exists(path)) {
+    if (!compat::fs::exists(path)) {
         ELOG << "FSAdapter::getFileEntry path not exists: " << path;
         return -1;
     }
 
-    if (fs::isdir(path)) {
+    if (compat::fs::isdir(path)) {
         temp->filetype = (FileType::DIR);
     } else {
         temp->filetype = (FileType::FILE_B);
     }
 
-    fastring name = Util::parseFileName(path);
+    std::string name = Util::parseFileName(path);
     temp->name = (name.c_str());
-    if (name.starts_with('.')) {
+    if (!name.empty() && name.front() == '.') {
         temp->hidden = (true);
     } else {
         temp->hidden = (false);
     }
 
-    temp->size = (fs::fsize(path));
-    temp->modified_time = (fs::mtime(path));
+    temp->size = (compat::fs::fsize(path));
+    temp->modified_time = (compat::fs::mtime(path));
 
     return 0;
 }
 
 bool FSAdapter::newFile(const char *path, bool isdir)
 {
-    fastring fullpath = path::join(DaemonConfig::instance()->getStorageDir(), path);
+    std::string fullpath = compat::path::join(DaemonConfig::instance()->getStorageDir(), path);
     if (isdir) {
-        fs::mkdir(fullpath, true);
+        compat::fs::mkdir(fullpath, true);
     } else {
-        fastring parent = path::dir(fullpath);
-        fs::mkdir(parent, true);   // 创建文件保存的根/子目录
-        if (!fs::exists(fullpath)) {
-            fs::file fx(fullpath, 'm');
+        std::string parent = compat::path::dir(fullpath);
+        compat::fs::mkdir(parent, true);   // 创建文件保存的根/子目录
+        if (!compat::fs::exists(fullpath)) {
+            compat::fs::file fx(fullpath, 'm');
             fx.close();
         }
     }
     //    LOG << "new file -> fullpath: " << fullpath;
 
-    return fs::exists(fullpath);
+    return compat::fs::exists(fullpath);
 }
 
 bool FSAdapter::newFileByFullPath(const char *fullpath, bool isdir)
 {
     if (isdir) {
-        fs::mkdir(fullpath, true);
+        compat::fs::mkdir(fullpath, true);
     } else {
-        fastring parent = path::dir(fullpath);
-        fs::mkdir(parent, true);   // 创建文件保存的根/子目录
-        if (!fs::exists(fullpath)) {
-            fs::file fx(fullpath, 'm');
+        std::string parent = compat::path::dir(fullpath);
+        compat::fs::mkdir(parent, true);   // 创建文件保存的根/子目录
+        if (!compat::fs::exists(fullpath)) {
+            compat::fs::file fx(fullpath, 'm');
             fx.close();
         }
     }
     LOG << "new file -> fullpath: " << fullpath;
 
-    return fs::exists(fullpath);
+    return compat::fs::exists(fullpath);
 }
 
 bool FSAdapter::writeBlock(const char *name, int64 seek_len, const char *data, size_t size)
 {
-    fs::file fx(name, 'm');
+    compat::fs::file fx(name, 'm');
     if (!fx.exists()) {
         ELOG << "writeBlock File does not exist: " << name;
         return false;
@@ -107,7 +107,7 @@ bool FSAdapter::writeBlock(const char *name, int64 seek_len, const char *data, s
 }
 
 bool FSAdapter::writeBlock(const char *name, int64 seek_len,
-                           const char *data, size_t size, const int flags, fs::file **fx)
+                           const char *data, size_t size, const int flags, compat::fs::file **fx)
 {
     if (flags & JobTransFileOp::FIlE_CREATE) {
         if ((*fx) != nullptr) {
@@ -118,9 +118,9 @@ bool FSAdapter::writeBlock(const char *name, int64 seek_len,
             (*fx) = nullptr;
             return false;
         }
-        fastring parent = path::dir(name);
-        fs::mkdir(parent, true);   // 创建文件保存的根/子目录
-        (*fx) = new fs::file(name, 'm');
+        std::string parent = compat::path::dir(name);
+        compat::fs::mkdir(parent, true);   // 创建文件保存的根/子目录
+        (*fx) = new compat::fs::file(name, 'm');
         if (!(*fx)->exists()) {
             ELOG << " file create error , file = " << name << ", flags = " << flags;
             (*fx)->close();
@@ -160,13 +160,13 @@ bool FSAdapter::writeBlock(const char *name, int64 seek_len,
     return write;
 }
 
-bool FSAdapter::reacquirePath(fastring filepath, fastring *newpath)
+bool FSAdapter::reacquirePath(std::string filepath, std::string *newpath)
 {
-    if (!fs::exists(filepath)) {
+    if (!compat::fs::exists(filepath)) {
         return false;
     }
 
-    std::pair<fastring, fastring> sp = path::split(filepath);
+    std::pair<std::string, std::string> sp = compat::path::split(filepath);
     if (sp.first.empty()) {
         ELOG << "the filepath not start with /";
         return false;
@@ -174,16 +174,16 @@ bool FSAdapter::reacquirePath(fastring filepath, fastring *newpath)
 
     // 获取一个可用不存在的名字路径
     // /a/b/c/d.txt -> /a/b/c/d(1).txt; /a/b/c/d -> /a/b/c/d(1)
-    fastring tmpPath = filepath;
-    fastring suffix = path::ext(filepath);
-    fastring org = sp.second.replace(suffix, "");
-    fastring tmpName;
+    std::string tmpPath = filepath;
+    std::string suffix = compat::path::ext(filepath);
+    std::string org = compat::str::replace(sp.second, suffix, "");
+    std::string tmpName;
     int n = 1;
     do {
-        tmpName = org + "(" << n << ")" + suffix;
-        tmpPath = path::join(sp.first, tmpName);
+        tmpName = org + "(" + std::to_string(n) + ")" + suffix;
+        tmpPath = compat::path::join(sp.first, tmpName);
         n++;
-    } while (fs::exists(tmpPath));
+    } while (compat::fs::exists(tmpPath));
 
     LOG << "reacquire " << filepath << " -> " << tmpPath;
 

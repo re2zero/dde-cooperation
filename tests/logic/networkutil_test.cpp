@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2026 UnionTech Software Technology Co., Ltd.
+﻿// SPDX-FileCopyrightText: 2026 - 2026 UnionTech Software Technology Co., Ltd.
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -37,16 +37,13 @@ picojson::value parseJson(const std::string &s)
 
 // ---------------------------------------------------------------------------
 // cooconstrants.h : 端口 / PIN / 申请类型常量
-//   networkutil.cpp 中 NetworkUtilPrivate 构造时使用 COO_SESSION_PORT、COO_HARD_PIN，
+//   networkutil.cpp 中 NetworkUtilPrivate 构造时使用 COO_SESSION_PORT，
 //   doNextCombiRequest / msg_cb 中按 APPLY_INFO / APPLY_TRANS / APPLY_SHARE 分发。
 // ---------------------------------------------------------------------------
 TEST(NetworkUtilTest, SessionPortConstant)
 {
     EXPECT_EQ(COO_SESSION_PORT, 51598);
-}
-
-TEST(NetworkUtilTest, HardPinConstant)
-{
+    // v25 新旧版本互通依赖这个共享 PIN
     EXPECT_STREQ(COO_HARD_PIN, "515616");
 }
 

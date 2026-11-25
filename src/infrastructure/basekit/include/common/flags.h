@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2025 UnionTech Software Technology Co., Ltd.
+﻿// SPDX-FileCopyrightText: 2025 - 2026 UnionTech Software Technology Co., Ltd.
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -7,6 +7,12 @@
 
 #include <bitset>
 #include <type_traits>
+
+// <sys/param.h> (pulled in by some network/system headers) defines an
+// "isset(a,i)" macro which collides with Flags::isset(). Undefine it here.
+#ifdef isset
+#undef isset
+#endif
 
 namespace BaseKit {
 

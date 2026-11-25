@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2026 UnionTech Software Technology Co., Ltd.
+﻿// SPDX-FileCopyrightText: 2026 - 2026 UnionTech Software Technology Co., Ltd.
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -102,12 +102,14 @@ namespace {
 class TunnelSessionCallback : public SessionCallInterface
 {
 public:
-    void onReceivedMessage(const proto::OriginMessage &request, proto::OriginMessage *response) override
+    bool onReceivedMessage(const proto::OriginMessage &request, const std::string &,
+                           proto::OriginMessage *response) override
     {
         rpcCount.fetch_add(1);
         response->id = request.id;
         response->mask = request.mask;
         response->json_msg = (request.mask == silentMask.load()) ? "" : R"({"ok":true})";
+        return true;
     }
 
     // A request with this mask is deliberately left unanswered, keeping its

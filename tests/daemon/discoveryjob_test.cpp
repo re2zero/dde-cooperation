@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2026 UnionTech Software Technology Co., Ltd.
+// SPDX-FileCopyrightText: 2026 - 2026 UnionTech Software Technology Co., Ltd.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include <gtest/gtest.h>
@@ -11,7 +11,7 @@
 #include "utils/utils.h"
 #include "ipc/proto/comstruct.h"
 
-#include "co/json.h"
+#include "common/compatbase.h"
 
 #include "stub.h"
 
@@ -32,10 +32,10 @@ static ::testing::Environment *g_disenv = ::testing::AddGlobalTestEnvironment(ne
 // Coverage strategy: instead of stubbing DiscoveryJob methods to no-ops (which
 // covers 0% of their bodies), we set the private _announcer_p / _discoverer_p
 // pointers to REAL searchlight objects so the methods execute their actual code.
-// The singleton destructor does `if (!p->started()) co::del(p)`, and we never
+// The singleton destructor does `if (!p->started()) compat::del(p)`, and we never
 // call .start(), so the objects we allocate are reclaimed safely at process exit.
 
-static fastring makeBaseInfo()
+static std::string makeBaseInfo()
 {
     NodePeerInfo npi;
     npi.proto_version = "1.0";
@@ -65,7 +65,7 @@ static searchlight::Discoverer *installDiscoverer()
 }
 
 // fakes for network-only paths we still want to short-circuit
-static fastring fakeFirstIp() { return "1.2.3.4"; }
+static std::string fakeFirstIp() { return "1.2.3.4"; }
 
 // ---- instance / getNodes ----
 
@@ -86,7 +86,7 @@ TEST(DiscoveryJobTest, GetNodesEmpty)
 TEST(DiscoveryJobTest, GetNodesWithData)
 {
     DiscoveryJob::instance()->_dis_node_maps.insert(
-        "uid1", std::make_pair(fastring("nodeinfo1"), true));
+        "uid1", std::make_pair(std::string("nodeinfo1"), true));
     auto nodes = DiscoveryJob::instance()->getNodes();
     EXPECT_EQ(nodes.size(), 1u);
     // cleanup to avoid interfering with other tests
@@ -112,28 +112,28 @@ TEST(DiscoveryJobTest, NotifySearchResultFalse)
 TEST(DiscoveryJobTest, BaseInfoReal)
 {
     installAnnouncer();
-    fastring b = DiscoveryJob::instance()->baseInfo();
+    std::string b = DiscoveryJob::instance()->baseInfo();
     EXPECT_FALSE(b.empty());
-    EXPECT_TRUE(b.find("uuid-test-1234") != fastring::npos);
+    EXPECT_TRUE(b.find("uuid-test-1234") != std::string::npos);
 }
 
 TEST(DiscoveryJobTest, UpdateAnnouncBaseReal)
 {
     installAnnouncer();
     DiscoveryJob::instance()->updateAnnouncBase("{\"uuid\":\"new\"}");
-    EXPECT_EQ(DiscoveryJob::instance()->baseInfo(), fastring("{\"uuid\":\"new\"}"));
+    EXPECT_EQ(DiscoveryJob::instance()->baseInfo(), std::string("{\"uuid\":\"new\"}"));
 }
 
 TEST(DiscoveryJobTest, UpdateAnnouncAppAppendRemove)
 {
     installAnnouncer();
-    fastring app1 = "{\"appname\":\"app1\",\"json\":\"{}\"}";
-    fastring app2 = "{\"appname\":\"app2\",\"json\":\"{}\"}";
+    std::string app1 = "{\"appname\":\"app1\",\"json\":\"{}\"}";
+    std::string app2 = "{\"appname\":\"app2\",\"json\":\"{}\"}";
     DiscoveryJob::instance()->updateAnnouncApp(false, app1);
     DiscoveryJob::instance()->updateAnnouncApp(false, app2);
-    fastring pkg = DiscoveryJob::instance()->udpSendPackage();
-    EXPECT_TRUE(pkg.find("app1") != fastring::npos);
-    EXPECT_TRUE(pkg.find("app2") != fastring::npos);
+    std::string pkg = DiscoveryJob::instance()->udpSendPackage();
+    EXPECT_TRUE(pkg.find("app1") != std::string::npos);
+    EXPECT_TRUE(pkg.find("app2") != std::string::npos);
 
     DiscoveryJob::instance()->updateAnnouncApp(true, app1);
     pkg = DiscoveryJob::instance()->udpSendPackage();
@@ -145,8 +145,8 @@ TEST(DiscoveryJobTest, UpdateAnnouncShareRemove)
 {
     installAnnouncer();
     DiscoveryJob::instance()->updateAnnouncShare(true);
-    fastring b = DiscoveryJob::instance()->baseInfo();
-    co::Json j;
+    std::string b = DiscoveryJob::instance()->baseInfo();
+    compat::Json j;
     ASSERT_TRUE(j.parse_from(b));
     NodePeerInfo npi;
     npi.from_json(j);
@@ -157,12 +157,12 @@ TEST(DiscoveryJobTest, UpdateAnnouncShareAdd)
 {
     installAnnouncer();
     DiscoveryJob::instance()->updateAnnouncShare(false, "5.6.7.8");
-    fastring b = DiscoveryJob::instance()->baseInfo();
-    co::Json j;
+    std::string b = DiscoveryJob::instance()->baseInfo();
+    compat::Json j;
     ASSERT_TRUE(j.parse_from(b));
     NodePeerInfo npi;
     npi.from_json(j);
-    EXPECT_EQ(npi.share_connect_ip, fastring("5.6.7.8"));
+    EXPECT_EQ(npi.share_connect_ip, std::string("5.6.7.8"));
 }
 
 TEST(DiscoveryJobTest, UpdateAnnouncShareEmptyReturnsEarly)
@@ -176,7 +176,7 @@ TEST(DiscoveryJobTest, UpdateAnnouncShareEmptyReturnsEarly)
 TEST(DiscoveryJobTest, RemoveAppbyNameOther)
 {
     installAnnouncer();
-    fastring app1 = "{\"appname\":\"app1\",\"json\":\"{}\"}";
+    std::string app1 = "{\"appname\":\"app1\",\"json\":\"{}\"}";
     DiscoveryJob::instance()->updateAnnouncApp(false, app1);
     DiscoveryJob::instance()->removeAppbyName("app1");
     SUCCEED();
@@ -193,19 +193,19 @@ TEST(DiscoveryJobTest, RemoveAppbyNameDdeCooperation)
 TEST(DiscoveryJobTest, UdpSendPackageReal)
 {
     installAnnouncer();
-    fastring pkg = DiscoveryJob::instance()->udpSendPackage();
+    std::string pkg = DiscoveryJob::instance()->udpSendPackage();
     EXPECT_FALSE(pkg.empty());
-    co::Json j;
+    compat::Json j;
     ASSERT_TRUE(j.parse_from(pkg));
-    EXPECT_EQ(j.get("name").as_string(), fastring("myservice"));
+    EXPECT_EQ(j.get("name").as_string(), std::string("myservice"));
 }
 
 TEST(DiscoveryJobTest, NodeInfoStrReal)
 {
     installAnnouncer();
-    fastring info = DiscoveryJob::instance()->nodeInfoStr();
+    std::string info = DiscoveryJob::instance()->nodeInfoStr();
     EXPECT_FALSE(info.empty());
-    co::Json j;
+    compat::Json j;
     ASSERT_TRUE(j.parse_from(info));
 }
 
@@ -221,7 +221,7 @@ TEST(DiscoveryJobTest, HandleUpdPackageInvalidJson)
 TEST(DiscoveryJobTest, HandleUpdPackageValidJson)
 {
     installDiscoverer();
-    co::Json node;
+    compat::Json node;
     node.add_member("name", "myservice");
     node.add_member("info", "{\"os\":{\"uuid\":\"uid2\",\"ipv4\":\"9.9.9.9\"}}");
     DiscoveryJob::instance()->handleUpdPackage("1.2.3.4", node.str().c_str());
@@ -231,7 +231,7 @@ TEST(DiscoveryJobTest, HandleUpdPackageValidJson)
 TEST(DiscoveryJobTest, HandleUpdPackageNonMatchingService)
 {
     installDiscoverer();
-    co::Json node;
+    compat::Json node;
     node.add_member("name", "other_service");
     node.add_member("info", "{\"os\":{\"uuid\":\"uid3\"}}");
     DiscoveryJob::instance()->handleUpdPackage("1.2.3.4", node.str().c_str());
@@ -284,7 +284,7 @@ TEST(DiscoveryJobTest, SearchDeviceByIpRemove)
 #include <utility>
 
 // Build a NodeInfo json with an arbitrary set of (appname, json) apps.
-static fastring nodeInfoJsonWithApps(std::initializer_list<std::pair<const char *, const char *>> apps)
+static std::string nodeInfoJsonWithApps(std::initializer_list<std::pair<const char *, const char *>> apps)
 {
     NodeInfo ni;
     ni.os.proto_version = "1.0";
@@ -307,10 +307,10 @@ TEST(DiscoveryJobTest, CompareOldAndNewOldAppsNewEmpty)
     auto *job = DiscoveryJob::instance();
     job->_dis_node_maps.clear();
 
-    fastring oldJson = nodeInfoJsonWithApps({{"app1", "json1"}});
-    fastring curJson = nodeInfoJsonWithApps({});
+    std::string oldJson = nodeInfoJsonWithApps({{"app1", "json1"}});
+    std::string curJson = nodeInfoJsonWithApps({});
 
-    job->_dis_node_maps.insert("uid1", std::make_pair(fastring(oldJson), true));
+    job->_dis_node_maps.insert("uid1", std::make_pair(std::string(oldJson), true));
     auto it = job->_dis_node_maps.find("uid1");
     ASSERT_NE(it, job->_dis_node_maps.end());
 
@@ -328,10 +328,10 @@ TEST(DiscoveryJobTest, CompareOldAndNewOldEmptyNewApps)
     auto *job = DiscoveryJob::instance();
     job->_dis_node_maps.clear();
 
-    fastring oldJson = nodeInfoJsonWithApps({});
-    fastring curJson = nodeInfoJsonWithApps({{"app1", "json1"}});
+    std::string oldJson = nodeInfoJsonWithApps({});
+    std::string curJson = nodeInfoJsonWithApps({{"app1", "json1"}});
 
-    job->_dis_node_maps.insert("uid2", std::make_pair(fastring(oldJson), true));
+    job->_dis_node_maps.insert("uid2", std::make_pair(std::string(oldJson), true));
     auto it = job->_dis_node_maps.find("uid2");
     ASSERT_NE(it, job->_dis_node_maps.end());
 
@@ -348,10 +348,10 @@ TEST(DiscoveryJobTest, CompareOldAndNewBothAppsDown)
     auto *job = DiscoveryJob::instance();
     job->_dis_node_maps.clear();
 
-    fastring oldJson = nodeInfoJsonWithApps({{"app1", "json1"}, {"app2", "json2"}});
-    fastring curJson = nodeInfoJsonWithApps({{"app1", "json1"}});
+    std::string oldJson = nodeInfoJsonWithApps({{"app1", "json1"}, {"app2", "json2"}});
+    std::string curJson = nodeInfoJsonWithApps({{"app1", "json1"}});
 
-    job->_dis_node_maps.insert("uid3", std::make_pair(fastring(oldJson), true));
+    job->_dis_node_maps.insert("uid3", std::make_pair(std::string(oldJson), true));
     auto it = job->_dis_node_maps.find("uid3");
     ASSERT_NE(it, job->_dis_node_maps.end());
 
@@ -367,10 +367,10 @@ TEST(DiscoveryJobTest, CompareOldAndNewBothAppsUp)
     auto *job = DiscoveryJob::instance();
     job->_dis_node_maps.clear();
 
-    fastring oldJson = nodeInfoJsonWithApps({{"app1", "json1"}});
-    fastring curJson = nodeInfoJsonWithApps({{"app1", "json1"}, {"app2", "json2"}});
+    std::string oldJson = nodeInfoJsonWithApps({{"app1", "json1"}});
+    std::string curJson = nodeInfoJsonWithApps({{"app1", "json1"}, {"app2", "json2"}});
 
-    job->_dis_node_maps.insert("uid4", std::make_pair(fastring(oldJson), true));
+    job->_dis_node_maps.insert("uid4", std::make_pair(std::string(oldJson), true));
     auto it = job->_dis_node_maps.find("uid4");
     ASSERT_NE(it, job->_dis_node_maps.end());
 
@@ -386,10 +386,10 @@ TEST(DiscoveryJobTest, CompareOldAndNewBothAppsContentChanged)
     auto *job = DiscoveryJob::instance();
     job->_dis_node_maps.clear();
 
-    fastring oldJson = nodeInfoJsonWithApps({{"app1", "payload-A"}});
-    fastring curJson = nodeInfoJsonWithApps({{"app1", "payload-B"}});
+    std::string oldJson = nodeInfoJsonWithApps({{"app1", "payload-A"}});
+    std::string curJson = nodeInfoJsonWithApps({{"app1", "payload-B"}});
 
-    job->_dis_node_maps.insert("uid5", std::make_pair(fastring(oldJson), true));
+    job->_dis_node_maps.insert("uid5", std::make_pair(std::string(oldJson), true));
     auto it = job->_dis_node_maps.find("uid5");
     ASSERT_NE(it, job->_dis_node_maps.end());
 

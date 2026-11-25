@@ -1,4 +1,4 @@
-﻿// SPDX-FileCopyrightText: 2023 - 2024 UnionTech Software Technology Co., Ltd.
+// SPDX-FileCopyrightText: 2023 - 2026 UnionTech Software Technology Co., Ltd.
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -33,7 +33,8 @@ NetworkUtilPrivate::NetworkUtilPrivate(NetworkUtil *qq)
     : q(qq)
 {
     DLOG << "Initializing NetworkUtil private implementation";
-    ExtenMessageHandler msg_cb([this](int32_t mask, const picojson::value &json_value, std::string *res_msg) -> bool {
+    ExtenMessageHandler msg_cb([this](int32_t mask, const picojson::value &json_value,
+                                      bool authenticated, std::string *res_msg) -> bool {
         DLOG << "NetworkUtil >> " << mask << " msg_cb, json_msg: " << json_value << std::endl;
         switch (mask) {
         case SESSION_MESSAGE: {
@@ -194,10 +195,14 @@ void NetworkUtilPrivate::handleAsyncRpcResult(int32_t type, const QString respon
             QString ip = login.name.c_str();
             bool logined = !login.auth.empty();
             sessionManager->updateLoginStatus(ip, logined);
-
-            // q->doNextCombiRequest(ip);
-            // notify login success
-            emit TransferHelper::instance()->connectSucceed();
+            if (logined) {
+                // Remember the token so a later connect can be silent.
+                sessionManager->storePeerToken(ip, QString::fromStdString(login.auth));
+                emit TransferHelper::instance()->connectSucceed();
+            } else {
+                WLOG << "Login denied by the peer, trying compat login";
+                q->compatLogin();
+            }
         } else {
             // try connect with old protocol
             q->compatLogin();

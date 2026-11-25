@@ -1,4 +1,4 @@
-﻿// SPDX-FileCopyrightText: 2024 UnionTech Software Technology Co., Ltd.
+﻿// SPDX-FileCopyrightText: 2024 - 2026 UnionTech Software Technology Co., Ltd.
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -70,6 +70,8 @@ void PhoneHelper::registConnectBtn(MainWindow *window)
 
     window->addMobileOperation(DisconnectInfo);
     DLOG << "Generating QR code for mobile connection";
+    // Released mobile clients read the shared PIN from the QR code, so the
+    // desktop has to keep advertising the same value.
     generateQRCode(CooperationUtil::localIPAddress(), QString::number(COO_SESSION_PORT), COO_HARD_PIN);
     DLOG << "Mobile connection buttons registered";
 }

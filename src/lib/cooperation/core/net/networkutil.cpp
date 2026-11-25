@@ -1,4 +1,4 @@
-﻿// SPDX-FileCopyrightText: 2023 - 2026 UnionTech Software Technology Co., Ltd.
+// SPDX-FileCopyrightText: 2023 - 2026 UnionTech Software Technology Co., Ltd.
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -30,6 +30,8 @@
 #include <QScreen>
 
 using namespace cooperation_core;
+
+static_assert(APPLY_INFO == SESSION_APPLY_INFO, "discovery probe mask changed");
 NetworkUtilPrivate::NetworkUtilPrivate(NetworkUtil *qq)
     : q(qq)
 {
@@ -79,7 +81,8 @@ NetworkUtilPrivate::NetworkUtilPrivate(NetworkUtil *qq)
                     tunnelManager->stopLocalForward(serviceId);
             });
 
-    ExtenMessageHandler msg_cb([this](int32_t mask, const picojson::value &json_value, std::string *res_msg) -> bool {
+    ExtenMessageHandler msg_cb([this](int32_t mask, const picojson::value &json_value,
+                                      bool authenticated, std::string *res_msg) -> bool {
 #ifdef QT_DEBUG
         DLOG << "NetworkUtil >> " << mask << " msg_cb, json_msg: " << json_value << std::endl;
 #endif
@@ -91,8 +94,10 @@ NetworkUtilPrivate::NetworkUtilPrivate(NetworkUtil *qq)
             req.from_json(json_value);
             res.flag = DO_DONE;
             WLOG << "msg_cb: " << json_value;
-            // response my device info.
-            res.nick = q->deviceInfoStr().toStdString();
+            // Unauthenticated discovery only gets the public device info; the
+            // full settings (storage path, sharing options) stay private.
+            res.nick = authenticated ? q->deviceInfoStr().toStdString()
+                                     : q->discoveryInfoStr().toStdString();
             *res_msg = res.as_json().serialize();
 
             // update this device info to discovery list
@@ -296,9 +301,18 @@ NetworkUtilPrivate::NetworkUtilPrivate(NetworkUtil *qq)
     });
 
     sessionManager->setSessionExtCallback(msg_cb);
+    // v25 peers authenticate with the shared PIN. Released builds still send
+    // it, so the new host must accept it; per-peer tokens remain an additional
+    // accepted credential once a pairing has happened.
     sessionManager->updatePin(COO_HARD_PIN);
     sessionManager->sessionListen(servePort);
 
+    connect(sessionManager, &SessionManager::pairingConfirmRequested, this,
+            [this](const QString &ip, const QString &name) {
+                q->metaObject()->invokeMethod(TransferHelper::instance(), "notifyLoginRequest",
+                                              Qt::QueuedConnection,
+                                              Q_ARG(QString, ip), Q_ARG(QString, name));
+            });
     connect(sessionManager, &SessionManager::notifyConnection, this, &NetworkUtilPrivate::handleConnectStatus);
     connect(sessionManager, &SessionManager::notifyTransChanged, this, &NetworkUtilPrivate::handleTransChanged);
     connect(sessionManager, &SessionManager::notifyAsyncRpcResult, this, &NetworkUtilPrivate::handleAsyncRpcResult);
@@ -429,14 +443,24 @@ void NetworkUtilPrivate::handleAsyncRpcResult(int32_t type, const QString respon
             QString ip = login.name.c_str();
             bool logined = !login.auth.empty();
             sessionManager->updateLoginStatus(ip, logined);
-            // ApplyMessage reply;
-            // reply.from_json(json_value);
-            // next combi request
-            q->doNextCombiRequest(ip);
+            if (logined) {
+                // The peer issued us a token for silent logins from now on.
+                sessionManager->storePeerToken(ip, QString::fromStdString(login.auth));
+                q->doNextCombiRequest(ip);
+            } else {
+                DLOG << "Login denied by the peer, trying compat login";
+                // A peer that rejects the shared PIN only speaks the v20
+                // protocol.
+                const QString target = q->_nextCombi.second;
+                q->_nextCombi = {};
+                q->compatLogin(target);
+            }
         } else {
             DLOG << "Login failed, trying compat login";
             // try connect with old protocol
-            q->compatLogin(response);
+            const QString target = q->_nextCombi.second;
+            q->_nextCombi = {};
+            q->compatLogin(target);
         }
         break;
     }
@@ -496,6 +520,11 @@ NetworkUtil::NetworkUtil(QObject *parent)
     auto wrapper = CompatWrapper::instance();
     auto discover = DiscoverController::instance();
     connect(wrapper, &CompatWrapper::compatConnectResult, this, &NetworkUtil::handleCompatConnectResult, Qt::QueuedConnection);
+    connect(wrapper, &CompatWrapper::compatLoginConfirm, this, [](const QString &ip, const QString &name) {
+        QMetaObject::invokeMethod(TransferHelper::instance(), "notifyLoginRequest",
+                                  Qt::QueuedConnection,
+                                  Q_ARG(QString, ip), Q_ARG(QString, name));
+    });
     connect(discover, &DiscoverController::registCompatAppInfo, this, &NetworkUtil::handleCompatRegister, Qt::QueuedConnection);
     connect(discover, &DiscoverController::startDiscoveryDevice, this, &NetworkUtil::handleCompatDiscover, Qt::QueuedConnection);
     DLOG << "Compat mode connections established";
@@ -705,11 +734,12 @@ void NetworkUtil::reqTargetInfo(const QString &ip, bool compat)
 #endif
     } else {
         DLOG << "Sending info apply";
-        // send info apply, and sync handle
+        // Send only the public discovery fields. The full device settings
+        // (storage path, sharing preferences) are not needed to find a peer.
         ApplyMessage msg;
         msg.flag = ASK_QUIET;
         msg.host = ip.toStdString();
-        msg.nick = deviceInfoStr().toStdString();
+        msg.nick = discoveryInfoStr().toStdString();
         QString jsonMsg = msg.as_json().serialize().c_str();
         d->sessionManager->sendRpcRequest(ip, APPLY_INFO, jsonMsg);
         // handle callback result in handleAsyncRpcResult
@@ -1107,6 +1137,34 @@ bool NetworkUtil::isCurrentlyCooperating()
          << " isCooperating:" << isCooperating;
 
     return isCooperating;
+}
+
+QString NetworkUtil::discoveryInfoStr()
+{
+    // Only fields needed to show the device in discovery. No user name,
+    // host name, storage path or sharing preferences.
+    const QVariantMap full = CooperationUtil::deviceInfo();
+    static const char *const safeKeys[] = {
+        AppSettings::DeviceNameKey,
+        AppSettings::DiscoveryModeKey,
+        AppSettings::OSType,
+        AppSettings::TransferModeKey,
+        AppSettings::IPAddress,
+    };
+    QVariantMap minimal;
+    for (const char *key : safeKeys) {
+        auto it = full.find(key);
+        if (it != full.end())
+            minimal.insert(it.key(), it.value());
+    }
+    return QString::fromUtf8(QJsonDocument::fromVariant(minimal).toJson(QJsonDocument::Compact));
+}
+
+void NetworkUtil::replyPairingConfirm(const QString &ip, bool agree)
+{
+    DLOG << "replyPairingConfirm for:" << ip.toStdString() << "agree:" << agree;
+    if (d->sessionManager)
+        d->sessionManager->replyPairing(ip, agree);
 }
 
 QString NetworkUtil::deviceInfoStr()

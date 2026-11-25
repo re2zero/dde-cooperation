@@ -2,21 +2,21 @@
 // DO NOT EDIT. All changes will be undone.
 #pragma once
 
-#include "co/json.h"
+#include "common/compatbase.h"
 
 struct SendResult {
     uint32 protocolType;
     int32 errorType;
-    fastring data;
+    std::string data;
 
-    void from_json(const co::Json& _x_) {
+    void from_json(const compat::Json& _x_) {
         protocolType = (uint32)_x_.get("protocolType").as_int64();
         errorType = (int32)_x_.get("errorType").as_int64();
         data = _x_.get("data").as_c_str();
     }
 
-    co::Json as_json() const {
-        co::Json _x_;
+    compat::Json as_json() const {
+        compat::Json _x_;
         _x_.add_member("protocolType", protocolType);
         _x_.add_member("errorType", errorType);
         _x_.add_member("data", data);
@@ -25,17 +25,17 @@ struct SendResult {
 };
 
 struct UserLoginInfo {
-    fastring name;
-    fastring auth;
-    fastring my_uid;
-    fastring my_name;
-    fastring session_id;
-    fastring selfappName;
-    fastring appName;
-    fastring version;
-    fastring ip;
+    std::string name;
+    std::string auth;
+    std::string my_uid;
+    std::string my_name;
+    std::string session_id;
+    std::string selfappName;
+    std::string appName;
+    std::string version;
+    std::string ip;
 
-    void from_json(const co::Json& _x_) {
+    void from_json(const compat::Json& _x_) {
         name = _x_.get("name").as_c_str();
         auth = _x_.get("auth").as_c_str();
         my_uid = _x_.get("my_uid").as_c_str();
@@ -47,8 +47,8 @@ struct UserLoginInfo {
         ip = _x_.get("ip").as_c_str();
     }
 
-    co::Json as_json() const {
-        co::Json _x_;
+    compat::Json as_json() const {
+        compat::Json _x_;
         _x_.add_member("name", name);
         _x_.add_member("auth", auth);
         _x_.add_member("my_uid", my_uid);
@@ -63,13 +63,13 @@ struct UserLoginInfo {
 };
 
 struct PeerInfo {
-    fastring username;
-    fastring hostname;
-    fastring platform;
-    fastring version;
+    std::string username;
+    std::string hostname;
+    std::string platform;
+    std::string version;
     bool privacy_mode;
 
-    void from_json(const co::Json& _x_) {
+    void from_json(const compat::Json& _x_) {
         username = _x_.get("username").as_c_str();
         hostname = _x_.get("hostname").as_c_str();
         platform = _x_.get("platform").as_c_str();
@@ -77,8 +77,8 @@ struct PeerInfo {
         privacy_mode = _x_.get("privacy_mode").as_bool();
     }
 
-    co::Json as_json() const {
-        co::Json _x_;
+    compat::Json as_json() const {
+        compat::Json _x_;
         _x_.add_member("username", username);
         _x_.add_member("hostname", hostname);
         _x_.add_member("platform", platform);
@@ -90,19 +90,19 @@ struct PeerInfo {
 
 struct UserLoginResultInfo {
     PeerInfo peer;
-    fastring token;
-    fastring appName;
+    std::string token;
+    std::string appName;
     bool result;
 
-    void from_json(const co::Json& _x_) {
+    void from_json(const compat::Json& _x_) {
         peer.from_json(_x_.get("peer"));
         token = _x_.get("token").as_c_str();
         appName = _x_.get("appName").as_c_str();
         result = _x_.get("result").as_bool();
     }
 
-    co::Json as_json() const {
-        co::Json _x_;
+    compat::Json as_json() const {
+        compat::Json _x_;
         _x_.add_member("peer", peer.as_json());
         _x_.add_member("token", token);
         _x_.add_member("appName", appName);
@@ -112,16 +112,16 @@ struct UserLoginResultInfo {
 };
 
 struct MiscInfo {
-    fastring appName;
-    fastring json;
+    std::string appName;
+    std::string json;
 
-    void from_json(const co::Json& _x_) {
+    void from_json(const compat::Json& _x_) {
         appName = _x_.get("appName").as_c_str();
         json = _x_.get("json").as_c_str();
     }
 
-    co::Json as_json() const {
-        co::Json _x_;
+    compat::Json as_json() const {
+        compat::Json _x_;
         _x_.add_member("appName", appName);
         _x_.add_member("json", json);
         return _x_;
@@ -130,16 +130,16 @@ struct MiscInfo {
 
 struct FileTransJob {
     int32 job_id;
-    fastring path;
-    fastring save_path;
+    std::string path;
+    std::string save_path;
     bool include_hidden;
     bool sub;
     bool write;
-    fastring app_who;
-    fastring targetAppname;
-    fastring ip;
+    std::string app_who;
+    std::string targetAppname;
+    std::string ip;
 
-    void from_json(const co::Json& _x_) {
+    void from_json(const compat::Json& _x_) {
         job_id = (int32)_x_.get("job_id").as_int64();
         path = _x_.get("path").as_c_str();
         save_path = _x_.get("save_path").as_c_str();
@@ -151,8 +151,8 @@ struct FileTransJob {
         ip = _x_.get("ip").as_c_str();
     }
 
-    co::Json as_json() const {
-        co::Json _x_;
+    compat::Json as_json() const {
+        compat::Json _x_;
         _x_.add_member("job_id", job_id);
         _x_.add_member("path", path);
         _x_.add_member("save_path", save_path);
@@ -168,14 +168,14 @@ struct FileTransJob {
 
 struct FileEntry {
     int32 filetype;
-    fastring name;
+    std::string name;
     bool hidden;
     int64 size;
     int64 modified_time;
-    fastring appName;
-    fastring rcvappName;
+    std::string appName;
+    std::string rcvappName;
 
-    void from_json(const co::Json& _x_) {
+    void from_json(const compat::Json& _x_) {
         filetype = (int32)_x_.get("filetype").as_int64();
         name = _x_.get("name").as_c_str();
         hidden = _x_.get("hidden").as_bool();
@@ -185,8 +185,8 @@ struct FileEntry {
         rcvappName = _x_.get("rcvappName").as_c_str();
     }
 
-    co::Json as_json() const {
-        co::Json _x_;
+    compat::Json as_json() const {
+        compat::Json _x_;
         _x_.add_member("filetype", filetype);
         _x_.add_member("name", name);
         _x_.add_member("hidden", hidden);
@@ -201,18 +201,18 @@ struct FileEntry {
 struct FileTransCreate {
     int32 job_id;
     int32 file_id;
-    fastring sub_dir;
+    std::string sub_dir;
     FileEntry entry;
 
-    void from_json(const co::Json& _x_) {
+    void from_json(const compat::Json& _x_) {
         job_id = (int32)_x_.get("job_id").as_int64();
         file_id = (int32)_x_.get("file_id").as_int64();
         sub_dir = _x_.get("sub_dir").as_c_str();
         entry.from_json(_x_.get("entry"));
     }
 
-    co::Json as_json() const {
-        co::Json _x_;
+    compat::Json as_json() const {
+        compat::Json _x_;
         _x_.add_member("job_id", job_id);
         _x_.add_member("file_id", file_id);
         _x_.add_member("sub_dir", sub_dir);
@@ -223,17 +223,17 @@ struct FileTransCreate {
 
 struct FileTransResponse {
     int32 id { -1 };
-    fastring name;
+    std::string name;
     int32 result { -1 };
 
-    void from_json(const co::Json& _x_) {
+    void from_json(const compat::Json& _x_) {
         id = (int32)_x_.get("id").as_int64();
         name = _x_.get("name").as_c_str();
         result = (int32)_x_.get("result").as_int64();
     }
 
-    co::Json as_json() const {
-        co::Json _x_;
+    compat::Json as_json() const {
+        compat::Json _x_;
         _x_.add_member("id", id);
         _x_.add_member("name", name);
         _x_.add_member("result", result);
@@ -244,13 +244,13 @@ struct FileTransResponse {
 struct FileTransBlock {
     int32 job_id;
     int32 file_id;
-    fastring rootdir;
-    fastring filename;
+    std::string rootdir;
+    std::string filename;
     uint32 blk_id;
     int32 flags;
     int64 data_size{0};
 
-    void from_json(const co::Json& _x_) {
+    void from_json(const compat::Json& _x_) {
         job_id = (int32)_x_.get("job_id").as_int64();
         file_id = (int32)_x_.get("file_id").as_int64();
         rootdir = _x_.get("rootdir").as_c_str();
@@ -260,8 +260,8 @@ struct FileTransBlock {
         data_size = _x_.get("data_size").as_int64();
     }
 
-    co::Json as_json() const {
-        co::Json _x_;
+    compat::Json as_json() const {
+        compat::Json _x_;
         _x_.add_member("job_id", job_id);
         _x_.add_member("file_id", file_id);
         _x_.add_member("rootdir", rootdir);
@@ -275,17 +275,17 @@ struct FileTransBlock {
 
 struct FileTransJobAction {
     int32 job_id;
-    fastring appname;
+    std::string appname;
     uint32 type;
 
-    void from_json(const co::Json& _x_) {
+    void from_json(const compat::Json& _x_) {
         job_id = (int32)_x_.get("job_id").as_int64();
         appname = _x_.get("appname").as_c_str();
         type = (uint32)_x_.get("type").as_int64();
     }
 
-    co::Json as_json() const {
-        co::Json _x_;
+    compat::Json as_json() const {
+        compat::Json _x_;
         _x_.add_member("job_id", job_id);
         _x_.add_member("appname", appname);
         _x_.add_member("type", type);
@@ -295,19 +295,19 @@ struct FileTransJobAction {
 
 struct FileTransJobReport {
     int32 job_id;
-    fastring path;
-    fastring error;
+    std::string path;
+    std::string error;
     int32 result;
 
-    void from_json(const co::Json& _x_) {
+    void from_json(const compat::Json& _x_) {
         job_id = (int32)_x_.get("job_id").as_int64();
         path = _x_.get("path").as_c_str();
         error = _x_.get("error").as_c_str();
         result = (int32)_x_.get("result").as_int64();
     }
 
-    co::Json as_json() const {
-        co::Json _x_;
+    compat::Json as_json() const {
+        compat::Json _x_;
         _x_.add_member("job_id", job_id);
         _x_.add_member("path", path);
         _x_.add_member("error", error);
@@ -318,15 +318,15 @@ struct FileTransJobReport {
 
 struct ShareEvents {
     uint32 eventType;
-    fastring data;
+    std::string data;
 
-    void from_json(const co::Json& _x_) {
+    void from_json(const compat::Json& _x_) {
         eventType = (uint32)_x_.get("eventType").as_int64();
         data = _x_.get("data").as_c_str();
     }
 
-    co::Json as_json() const {
-        co::Json _x_;
+    compat::Json as_json() const {
+        compat::Json _x_;
         _x_.add_member("eventType", eventType);
         _x_.add_member("data", data);
         return _x_;
@@ -334,13 +334,13 @@ struct ShareEvents {
 };
 
 struct ShareConnectApply {
-    fastring appName;
-    fastring tarAppname;
-    fastring ip;
-    fastring tarIp;
-    fastring data;
+    std::string appName;
+    std::string tarAppname;
+    std::string ip;
+    std::string tarIp;
+    std::string data;
 
-    void from_json(const co::Json& _x_) {
+    void from_json(const compat::Json& _x_) {
         appName = _x_.get("appName").as_c_str();
         tarAppname = _x_.get("tarAppname").as_c_str();
         ip = _x_.get("ip").as_c_str();
@@ -348,8 +348,8 @@ struct ShareConnectApply {
         data = _x_.get("data").as_c_str();
     }
 
-    co::Json as_json() const {
-        co::Json _x_;
+    compat::Json as_json() const {
+        compat::Json _x_;
         _x_.add_member("appName", appName);
         _x_.add_member("tarAppname", tarAppname);
         _x_.add_member("ip", ip);
@@ -360,18 +360,18 @@ struct ShareConnectApply {
 };
 
 struct ShareDisConnect {
-    fastring appName;
-    fastring tarAppname;
-    fastring msg;
+    std::string appName;
+    std::string tarAppname;
+    std::string msg;
 
-    void from_json(const co::Json& _x_) {
+    void from_json(const compat::Json& _x_) {
         appName = _x_.get("appName").as_c_str();
         tarAppname = _x_.get("tarAppname").as_c_str();
         msg = _x_.get("msg").as_c_str();
     }
 
-    co::Json as_json() const {
-        co::Json _x_;
+    compat::Json as_json() const {
+        compat::Json _x_;
         _x_.add_member("appName", appName);
         _x_.add_member("tarAppname", tarAppname);
         _x_.add_member("msg", msg);
@@ -380,13 +380,13 @@ struct ShareDisConnect {
 };
 
 struct ShareConnectReply {
-    fastring appName;
-    fastring tarAppname;
-    fastring msg;
-    fastring ip;
+    std::string appName;
+    std::string tarAppname;
+    std::string msg;
+    std::string ip;
     int32 reply;
 
-    void from_json(const co::Json& _x_) {
+    void from_json(const compat::Json& _x_) {
         appName = _x_.get("appName").as_c_str();
         tarAppname = _x_.get("tarAppname").as_c_str();
         msg = _x_.get("msg").as_c_str();
@@ -394,8 +394,8 @@ struct ShareConnectReply {
         reply = (int32)_x_.get("reply").as_int64();
     }
 
-    co::Json as_json() const {
-        co::Json _x_;
+    compat::Json as_json() const {
+        compat::Json _x_;
         _x_.add_member("appName", appName);
         _x_.add_member("tarAppname", tarAppname);
         _x_.add_member("msg", msg);
@@ -406,18 +406,18 @@ struct ShareConnectReply {
 };
 
 struct ShareStop {
-    fastring appName;
-    fastring tarAppname;
+    std::string appName;
+    std::string tarAppname;
     int32 flags{ 0 };
 
-    void from_json(const co::Json& _x_) {
+    void from_json(const compat::Json& _x_) {
         appName = _x_.get("appName").as_c_str();
         tarAppname = _x_.get("tarAppname").as_c_str();
         flags = (int32)_x_.get("flags").as_int64();
     }
 
-    co::Json as_json() const {
-        co::Json _x_;
+    compat::Json as_json() const {
+        compat::Json _x_;
         _x_.add_member("appName", appName);
         _x_.add_member("tarAppname", tarAppname);
         _x_.add_member("flags", flags);
@@ -426,32 +426,32 @@ struct ShareStop {
 };
 
 struct ShareServerConfig {
-    fastring server_screen{ "" };
-    fastring client_screen{ "" };
-    fastring screen_left{ "" };
-    fastring screen_right{ "" };
+    std::string server_screen{ "" };
+    std::string client_screen{ "" };
+    std::string screen_left{ "" };
+    std::string screen_right{ "" };
     bool left_halfDuplexCapsLock{ false };
     bool left_halfDuplexNumLock{ false };
     bool left_halfDuplexScrollLock{ false };
     bool left_xtestIsXineramaUnaware{ false };
     bool left_preserveFocus{ false };
-    fastring left_switchCorners{ "none" };
+    std::string left_switchCorners{ "none" };
     int32 left_switchCornerSize{ 0 };
     bool right_halfDuplexCapsLock{ false };
     bool right_halfDuplexNumLock{ false };
     bool right_halfDuplexScrollLock{ false };
     bool right_xtestIsXineramaUnaware{ false };
     bool right_preserveFocus{ false };
-    fastring right_switchCorners{ "none" };
+    std::string right_switchCorners{ "none" };
     int32 right_switchCornerSize{ 0 };
     bool relativeMouseMoves{ false };
     bool screenSaverSync{ true };
     bool win32KeepForeground{ false };
     bool clipboardSharing{ false };
-    fastring switchCorners{ "none" };
+    std::string switchCorners{ "none" };
     int32 switchCornerSize{ 0 };
 
-    void from_json(const co::Json& _x_) {
+    void from_json(const compat::Json& _x_) {
         server_screen = _x_.get("server_screen").as_c_str();
         client_screen = _x_.get("client_screen").as_c_str();
         screen_left = _x_.get("screen_left").as_c_str();
@@ -478,8 +478,8 @@ struct ShareServerConfig {
         switchCornerSize = (int32)_x_.get("switchCornerSize").as_int64();
     }
 
-    co::Json as_json() const {
-        co::Json _x_;
+    compat::Json as_json() const {
+        compat::Json _x_;
         _x_.add_member("server_screen", server_screen);
         _x_.add_member("client_screen", client_screen);
         _x_.add_member("screen_left", screen_left);
@@ -509,13 +509,13 @@ struct ShareServerConfig {
 };
 
 struct ShareStart {
-    fastring appName{""};
-    fastring tarAppname{""};
+    std::string appName{""};
+    std::string tarAppname{""};
     ShareServerConfig config;
-    fastring ip{""};
+    std::string ip{""};
     int32 port{ 0 };
 
-    void from_json(const co::Json& _x_) {
+    void from_json(const compat::Json& _x_) {
         appName = _x_.get("appName").as_c_str();
         tarAppname = _x_.get("tarAppname").as_c_str();
         config.from_json(_x_.get("config"));
@@ -523,8 +523,8 @@ struct ShareStart {
         port = static_cast<int32>(_x_.get("port").as_int64());
     }
 
-    co::Json as_json() const {
-        co::Json _x_;
+    compat::Json as_json() const {
+        compat::Json _x_;
         _x_.add_member("appName", appName);
         _x_.add_member("tarAppname", tarAppname);
         _x_.add_member("config", config.as_json());
@@ -537,16 +537,16 @@ struct ShareStart {
 struct ShareStartReply {
     bool result;
     bool isRemote;
-    fastring errorMsg;
+    std::string errorMsg;
 
-    void from_json(const co::Json& _x_) {
+    void from_json(const compat::Json& _x_) {
         result = _x_.get("result").as_bool();
         isRemote = _x_.get("isRemote").as_bool();
         errorMsg = _x_.get("errorMsg").as_c_str();
     }
 
-    co::Json as_json() const {
-        co::Json _x_;
+    compat::Json as_json() const {
+        compat::Json _x_;
         _x_.add_member("result", result);
         _x_.add_member("isRemote", isRemote);
         _x_.add_member("errorMsg", errorMsg);
@@ -556,19 +556,19 @@ struct ShareStartReply {
 
 struct ShareStartRmoteReply {
     bool result;
-    fastring appName;
-    fastring tarAppname;
-    fastring errorMsg;
+    std::string appName;
+    std::string tarAppname;
+    std::string errorMsg;
 
-    void from_json(const co::Json& _x_) {
+    void from_json(const compat::Json& _x_) {
         result = _x_.get("result").as_bool();
         appName = _x_.get("appName").as_c_str();
         tarAppname = _x_.get("tarAppname").as_c_str();
         errorMsg = _x_.get("errorMsg").as_c_str();
     }
 
-    co::Json as_json() const {
-        co::Json _x_;
+    compat::Json as_json() const {
+        compat::Json _x_;
         _x_.add_member("result", result);
         _x_.add_member("appName", appName);
         _x_.add_member("tarAppname", tarAppname);
@@ -579,20 +579,20 @@ struct ShareStartRmoteReply {
 
 // 取消共享连接申请
 struct ShareConnectDisApply {
-    fastring appName;
-    fastring tarAppname;
-    fastring ip;
-    fastring msg;
+    std::string appName;
+    std::string tarAppname;
+    std::string ip;
+    std::string msg;
 
-    void from_json(const co::Json& _x_) {
+    void from_json(const compat::Json& _x_) {
         appName = _x_.get("appName").as_c_str();
         tarAppname = _x_.get("tarAppname").as_c_str();
         ip = _x_.get("ip").as_c_str();
         msg = _x_.get("msg").as_c_str();
     }
 
-    co::Json as_json() const {
-        co::Json _x_;
+    compat::Json as_json() const {
+        compat::Json _x_;
         _x_.add_member("appName", appName);
         _x_.add_member("tarAppname", tarAppname);
         _x_.add_member("ip", ip);
@@ -603,18 +603,18 @@ struct ShareConnectDisApply {
 
 // PingPong请求响应结构
 struct PingPong {
-    fastring appName;
-    fastring tarAppname;
-    fastring ip;
+    std::string appName;
+    std::string tarAppname;
+    std::string ip;
 
-    void from_json(const co::Json& _x_) {
+    void from_json(const compat::Json& _x_) {
         appName = _x_.get("appName").as_c_str();
         tarAppname = _x_.get("tarAppname").as_c_str();
         ip = _x_.get("ip").as_c_str();
     }
 
-    co::Json as_json() const {
-        co::Json _x_;
+    compat::Json as_json() const {
+        compat::Json _x_;
         _x_.add_member("appName", appName);
         _x_.add_member("tarAppname", tarAppname);
         _x_.add_member("ip", ip);
@@ -623,16 +623,16 @@ struct PingPong {
 };
 
 struct DiscoverInfo {
-    fastring ip;
-    fastring msg;
+    std::string ip;
+    std::string msg;
 
-    void from_json(const co::Json& _x_) {
+    void from_json(const compat::Json& _x_) {
         ip = _x_.get("ip").as_c_str();
         msg = _x_.get("msg").as_c_str();
     }
 
-    co::Json as_json() const {
-        co::Json _x_;
+    compat::Json as_json() const {
+        compat::Json _x_;
         _x_.add_member("ip", ip);
         _x_.add_member("msg", msg);
         return _x_;

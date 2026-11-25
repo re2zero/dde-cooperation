@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2023 UnionTech Software Technology Co., Ltd.
+// SPDX-FileCopyrightText: 2023 - 2026 UnionTech Software Technology Co., Ltd.
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -9,8 +9,7 @@
 #include <QSharedPointer>
 #include <QTimer>
 
-#include "co/co.h"
-#include "co/json.h"
+#include "common/compatbase.h"
 
 class RemoteServiceSender;
 class DiscoveryJob;
@@ -32,7 +31,7 @@ public slots:
 private:
     QString ipcName();
     void localIPCStart();
-    fastring genPeerInfo();
+    std::string genPeerInfo();
     void asyncDiscovery();
 private:
     HandleIpcService *_ipcService { nullptr };

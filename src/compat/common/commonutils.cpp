@@ -14,8 +14,9 @@
 #include <QFileSystemWatcher>
 #include <QTimer>
 #include <QProcess>
+#include <QTcpServer>
 
-#include "co/co/sock.h"
+#include "common/compatbase.h"
 
 using namespace deepin_cross;
 
@@ -76,29 +77,13 @@ std::string CommonUitls::getFirstIp()
 
 bool CommonUitls::isPortInUse(int port)
 {
-    sock_t sockfd = co::socket(AF_INET, SOCK_STREAM, 0);
-    if (sockfd < 0) {
-        WLOG << "socket failed";
-        return false;
+    QTcpServer probe;
+    if (!probe.listen(QHostAddress::Any, static_cast<quint16>(port))) {
+        ELOG << "Failed to bind address, port in use:" << port;
+        return true;
     }
-
-    bool inUse = false;
-    struct sockaddr_in addr;
-    bool init = co::init_addr(&addr, "0.0.0.0", port);
-    if (init) {
-        int res = co::bind(sockfd, &addr, sizeof(addr));
-        if (res < 0) {
-            ELOG << "Failed to bind address";
-            inUse = true;
-        }
-    } else {
-        ELOG << "Failed to init address";
-        co::close(sockfd);
-        inUse = true;
-    }
-
-    co::close(sockfd);
-    return inUse;
+    probe.close();
+    return false;
 }
 
 void CommonUitls::loadTranslator()
@@ -148,22 +133,7 @@ void CommonUitls::loadTranslator()
 
 void CommonUitls::initLog()
 {
-#ifdef QT_DEBUG
-    int level = 0;
-    log::xx::g_minLogLevel = static_cast<log::xx::LogLevel>(level);
-    LOG << "set LogLevel " << level;
-#endif
-
-    flag::set_value("rpc_log", "false");   //rpc日志关闭
-    flag::set_value("cout", "true");   //终端日志输出
-    flag::set_value("journal", "true");   //journal日志
-    if (detailLog()) {
-        flag::set_value("log_detail", "true");   //详细日志输出
-    }
-
-    fastring logdir = logDir().toStdString();
-    WLOG << "set logdir: " << logdir.c_str();
-    flag::set_value("log_dir", logdir);   //日志保存目录
+    compat::setLogDetail(detailLog());
 
 #ifdef linux
     QString logConfPath = QString("/usr/share/%1/")
@@ -182,23 +152,24 @@ void CommonUitls::initLog()
     }
 #endif
 
-#ifndef QT_DEBUG
-    int level = settings.value("g_minLogLevel", 2).toInt();
-    WLOG << "set LogLevel " << level;
-    log::xx::g_minLogLevel = static_cast<log::xx::LogLevel>(level);
+#ifdef QT_DEBUG
+    const int level = 0;
+#else
+    const int level = settings.value("g_minLogLevel", 2).toInt();
 
     QTimer *timer = new QTimer();
     QObject::connect(timer, &QTimer::timeout, [configFile] {
         QSettings settings(configFile, QSettings::IniFormat);
-        int level = settings.value("g_minLogLevel", 2).toInt();
-        auto logLevel = static_cast<log::xx::LogLevel>(level);
-        if (log::xx::g_minLogLevel != logLevel) {
-            log::xx::g_minLogLevel = logLevel;
-            WLOG << "update LogLevel " << level;
+        const int newLevel = settings.value("g_minLogLevel", 2).toInt();
+        if (newLevel != compat::logLevel()) {
+            compat::setLogLevel(newLevel);
+            WLOG << "update LogLevel " << newLevel;
         }
     });
     timer->start(2000);
 #endif
+    compat::setLogLevel(level);
+    WLOG << "set LogLevel " << level << " logdir:" << logDir().toStdString();
 }
 
 QString CommonUitls::elidedText(const QString &text, Qt::TextElideMode mode, int maxLength)

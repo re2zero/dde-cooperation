@@ -1,4 +1,4 @@
-﻿// SPDX-FileCopyrightText: 2023 UnionTech Software Technology Co., Ltd.
+// SPDX-FileCopyrightText: 2023 - 2026 UnionTech Software Technology Co., Ltd.
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -12,7 +12,7 @@
 #include "utils/config.h"
 #include "service/rpc/sendrpcservice.h"
 
-#include "co/co.h"
+#include "common/compatbase.h"
 
 HandleSendResultService::HandleSendResultService(QObject *parent) : QObject (parent)
 {
@@ -22,7 +22,7 @@ HandleSendResultService::HandleSendResultService(QObject *parent) : QObject (par
 void HandleSendResultService::handleSendResultMsg(const QString appName, const QString msg)
 {
     SendResult res;
-    co::Json res_json;
+    compat::Json res_json;
     if (!res_json.parse_from(msg.toStdString().c_str())) {
         ELOG << "handleSendResultMsg parse SendResult error!!!!!!!!";
         return;
@@ -47,7 +47,7 @@ void HandleSendResultService::handleSendResultMsg(const QString appName, const Q
 
 void HandleSendResultService::handleLogin(const QString &appName, const QString &msg)
 {
-    co::Json res_json;
+    compat::Json res_json;
     UserLoginResultInfo res;
     if (!res_json.parse_from(msg.toStdString())) {
         ELOG << "handleLogin parse SendResult error!!!!!!!! msg:" << msg.toStdString();
@@ -58,7 +58,7 @@ void HandleSendResultService::handleLogin(const QString &appName, const QString 
         res.from_json(res_json);
         if (res.result) {
             // TODO: save the target peer info into target's map
-            fastring token = res.token;
+            std::string token = res.token;
             PeerInfo target_info = res.peer;
             Comshare::instance()->updateStatus(CURRENT_STATUS_TRAN_CONNECT);
             // login successful
@@ -68,7 +68,7 @@ void HandleSendResultService::handleLogin(const QString &appName, const QString 
     }
 
     //cbConnect {GenericResult}
-    co::Json req = {
+    compat::Json req = {
         { "id", 0 },
         { "result", res.result ? 1 : 0 },
         // { "msg", (ip + " " + appName).toStdString() },

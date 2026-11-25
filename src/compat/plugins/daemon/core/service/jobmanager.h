@@ -13,7 +13,7 @@
 
 #include <service/job/transferjob.h>
 #include "common/commonstruct.h"
-#include "co/co.h"
+#include "common/compatbase.h"
 
 class JobManager : public QObject
 {
@@ -30,9 +30,9 @@ public:
 public slots:
     bool handleRemoteRequestJob(QString json, QString *targetAppName);
     bool doJobAction(const uint action, const int jobid);
-    bool handleFSData(const co::Json &info, fastring buf, FileTransResponse *reply);
-    bool handleCancelJob(co::Json &info, FileTransResponse *reply);
-    bool handleTransReport(co::Json &info, FileTransResponse *reply);
+    bool handleFSData(const compat::Json &info, std::string buf, FileTransResponse *reply);
+    bool handleCancelJob(compat::Json &info, FileTransResponse *reply);
+    bool handleTransReport(compat::Json &info, FileTransResponse *reply);
 
     void handleFileTransStatus(QString appname, int status, QString fileinfo);
     void handleJobTransStatus(QString appname, int jobid, int status, QString savedir);
@@ -46,7 +46,7 @@ private:
     QMap<int, QSharedPointer<TransferJob>> _transjob_recvs;
     // record the send jobs which have error happend. that can be resumed by user.
     QMap<int, QSharedPointer<TransferJob>> _transjob_break;
-    fastring _connected_target;
+    std::string _connected_target;
     QReadWriteLock g_m;
 
     // 安全验证：存储用户已确认接收文件的appName集合

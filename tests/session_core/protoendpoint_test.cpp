@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2026 UnionTech Software Technology Co., Ltd.
+﻿// SPDX-FileCopyrightText: 2026 - 2026 UnionTech Software Technology Co., Ltd.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include <gtest/gtest.h>
@@ -20,7 +20,8 @@ using namespace std::chrono_literals;
 class MockSessionCallback : public SessionCallInterface
 {
 public:
-    void onReceivedMessage(const proto::OriginMessage &, proto::OriginMessage *) override {}
+    bool onReceivedMessage(const proto::OriginMessage &, const std::string &,
+                           proto::OriginMessage *) override { return true; }
     bool onStateChanged(int, std::string &) override { return false; }
 };
 

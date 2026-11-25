@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "sessionmanager.h"
+#include "peertokenstore.h"
 
 #include "common/log.h"
 #include "common/commonutils.h"
@@ -60,6 +61,8 @@ SessionManager::SessionManager(QObject *parent) : QObject(parent)
     connect(_session_worker.get(), &SessionWorker::onRpcResult, this, &SessionManager::handleRpcResult, Qt::QueuedConnection);
     connect(_session_worker.get(), &SessionWorker::tunnelMessageReceived,
             this, &SessionManager::tunnelMessageReceived, Qt::QueuedConnection);
+    connect(_session_worker.get(), &SessionWorker::pairingRequested,
+            this, &SessionManager::pairingConfirmRequested, Qt::QueuedConnection);
 
     _file_counter = std::make_shared<FileSizeCounter>(this);
     connect(_file_counter.get(), &FileSizeCounter::onCountFinish, this, &SessionManager::handleFileCounted, Qt::QueuedConnection);
@@ -131,7 +134,8 @@ void SessionManager::clearTunnelHandlers()
 
 void SessionManager::updatePin(QString code)
 {
-    DLOG << "updatePin: " << code.toStdString();
+    // Never log the pairing secret itself.
+    DLOG << "updatePin";
     _session_worker->updatePincode(code);
 }
 
@@ -193,18 +197,36 @@ int SessionManager::sessionConnect(QString ip, int port, QString password)
         return -1;
     }
 
-    // base64 the pwd
+    // v25 peers authenticate with the shared PIN. Released builds still send
+    // it, and newer peers accept the per-peer token as an additional
+    // credential, so the caller always supplies the PIN.
     QByteArray pinHash = password.toUtf8().toBase64();
     std::string pinString(pinHash.constData(), pinHash.size());
 
     LoginMessage req;
     req.name = deepin_cross::CommonUitls::getFirstIp();
     req.auth = pinString;
+    req.nick = QCoreApplication::applicationName().toStdString();
 
     QString jsonMsg = req.as_json().serialize().c_str();
     sendRpcRequest(ip, REQ_LOGIN, jsonMsg);
 
     return 0;
+}
+
+void SessionManager::storePeerToken(const QString &ip, const QString &token)
+{
+    DLOG << "storePeerToken for:" << ip.toStdString();
+    if (_session_worker)
+        _session_worker->storePeerToken(ip, token);
+    else
+        PeerTokenStore::instance()->setClientToken(ip, token);
+}
+
+bool SessionManager::replyPairing(const QString &ip, bool agree)
+{
+    DLOG << "replyPairing for:" << ip.toStdString() << "agree:" << agree;
+    return _session_worker ? _session_worker->replyPairing(ip, agree) : false;
 }
 
 void SessionManager::sessionDisconnect(QString ip)

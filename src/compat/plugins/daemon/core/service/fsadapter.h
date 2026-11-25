@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2023 UnionTech Software Technology Co., Ltd.
+// SPDX-FileCopyrightText: 2023 - 2026 UnionTech Software Technology Co., Ltd.
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -7,7 +7,7 @@
 
 #include <QObject>
 
-#include "co/fs.h"
+#include "common/compatbase.h"
 #include "common/commonstruct.h"
 
 //namespace deamon_core {
@@ -23,15 +23,15 @@ public:
     static bool newFileByFullPath(const char *fullpath, bool isdir);
     static bool writeBlock(const char *name, int64 seek_len, const char *data, size_t size);
     static bool writeBlock(const char *name, int64 seek_len, const char *data, size_t size,
-                           const int flags, fs::file **fx);
-    static bool reacquirePath(fastring filepath, fastring *newpath);
+                           const int flags, compat::fs::file **fx);
+    static bool reacquirePath(std::string filepath, std::string *newpath);
 
 signals:
 
 public slots:
 
 private:
-    static co::map<int32, fastring> _filemaps_cache;
+    static std::map<int32, std::string> _filemaps_cache;
 
 };
 

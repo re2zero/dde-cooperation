@@ -45,7 +45,8 @@ public:
 
     void reportTransferResult(bool result);
     void notifyMessage(const QString &body, const QStringList &actions, int expireTimeout,
-                       const QVariantMap &hitMap = QVariantMap(), bool replaceExisting = false);
+                       const QVariantMap &hitMap = QVariantMap(), bool replaceExisting = false,
+                       const QString &title = QString());
     void initConnect();
     QVariantMap createViewFileHints(const QString &path);
 
@@ -67,6 +68,9 @@ private:
     QTimer confirmTimer;
     // 作为接收方时，发送方的ip; 作为发送方时，接收方的ip
     QString targetDeviceIp;
+
+    // 兼容协议：等待用户确认登录的远端 IP
+    QString loginConfirmIp;
 
 #ifdef __linux__
     NoticeUtil *notice { nullptr };

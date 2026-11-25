@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2023 UnionTech Software Technology Co., Ltd.
+// SPDX-FileCopyrightText: 2023 - 2026 UnionTech Software Technology Co., Ltd.
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -11,9 +11,8 @@
 #include "service/comshare.h"
 
 #include "common/constant.h"
-#include "co/log.h"
-#include "co/json.h"
-#include "co/co.h"
+#include "common/compatlog.h"
+#include "common/compatbase.h"
 #include "utils/utils.h"
 
 #include <QMap>
@@ -37,35 +36,35 @@ DiscoveryJob::~DiscoveryJob()
     // free discoverer pointer
     if (_discoverer_p) {
         auto p = (searchlight::Discoverer*)_discoverer_p;
-        if (!p->started()) co::del(p);
+        if (!p->started()) compat::del(p);
         _discoverer_p = nullptr;
     }
 
     // free announcer pointer
     if (_announcer_p) {
         auto p = (searchlight::Announcer*)_announcer_p;
-        if (!p->started()) co::del(p);
+        if (!p->started()) compat::del(p);
         _announcer_p = nullptr;
     }
 }
 
 void DiscoveryJob::discovererRun()
 {
-    _discoverer_p = co::make<searchlight::Discoverer>(
+    _discoverer_p = compat::make<searchlight::Discoverer>(
         "{\"name\":\"ulink_service\",\"port\"",
         [this](const QList<searchlight::Discoverer::service> & services)
         {
             QWriteLocker lk(&_dis_lock);
             for(auto& service : services) {
-                co::Json node;
+                compat::Json node;
                 node.parse_from(service.info);
-                co::Json osjson = node.get("os");
+                compat::Json osjson = node.get("os");
                 if (osjson.is_null() || !osjson.has_member("uuid")) {
                     //DLOG << "found error format: " << service;
                     continue;
                 }
 
-                fastring uid = osjson.get("uuid").as_string();
+                std::string uid = osjson.get("uuid").as_string();
 
                 auto it = _dis_node_maps.find(uid);
                 if (it != _dis_node_maps.end()) {
@@ -89,7 +88,7 @@ void DiscoveryJob::discovererRun()
                 if (it->second.second)
                     continue;
                 auto msg = it->second.first;
-                co::Json node;
+                compat::Json node;
                 node.parse_from(it->second.first);
                 NodeInfo nodeInfo;
                 nodeInfo.from_json(node);
@@ -103,9 +102,9 @@ void DiscoveryJob::discovererRun()
     ((searchlight::Discoverer*)_discoverer_p)->start();
 }
 
-void DiscoveryJob::announcerRun(const fastring &info)
+void DiscoveryJob::announcerRun(const std::string &info)
 {
-    _announcer_p = co::make<searchlight::Announcer>("ulink_service", UNI_RPC_PORT_BASE, info);
+    _announcer_p = compat::make<searchlight::Announcer>("ulink_service", UNI_RPC_PORT_BASE, info);
 
     ((searchlight::Announcer*)_announcer_p)->start([this](const QString &ip){
         QUNIGO([this, ip](){
@@ -120,7 +119,7 @@ void DiscoveryJob::announcerRun(const fastring &info)
             if (result.errorType < INVOKE_OK)
                 return;
 
-            co::Json json;
+            compat::Json json;
             if (!json.parse_from(result.data))
                 return;
             res.from_json(json);
@@ -142,17 +141,17 @@ void DiscoveryJob::stopAnnouncer()
         return;
     ((searchlight::Announcer*)_announcer_p)->exit();
     while (!((searchlight::Announcer*)_announcer_p)->finished()) {
-        co::sleep(100);
+        compat::sleep(100);
     }
 
 }
 
-void DiscoveryJob::updateAnnouncBase(const fastring info)
+void DiscoveryJob::updateAnnouncBase(const std::string info)
 {
     ((searchlight::Announcer*)_announcer_p)->updateBase(info);
 }
 
-void DiscoveryJob::updateAnnouncApp(bool remove, const fastring info)
+void DiscoveryJob::updateAnnouncApp(bool remove, const std::string info)
 {
     if (remove) {
         ((searchlight::Announcer*)_announcer_p)->removeApp(info);
@@ -161,11 +160,11 @@ void DiscoveryJob::updateAnnouncApp(bool remove, const fastring info)
     }
 }
 
-void DiscoveryJob::updateAnnouncShare(const bool remove, const fastring connectIP)
+void DiscoveryJob::updateAnnouncShare(const bool remove, const std::string connectIP)
 {
     QMutexLocker lk(&_lock);
     auto _base = ((searchlight::Announcer*)_announcer_p)->baseInfo();
-    co::Json _base_json;
+    compat::Json _base_json;
     if (!_base_json.parse_from(_base)) {
         ELOG << "parse from base info error !!!";
         return;
@@ -183,22 +182,22 @@ void DiscoveryJob::updateAnnouncShare(const bool remove, const fastring connectI
     updateAnnouncBase(_info.as_json().str());
 }
 
-void DiscoveryJob::removeAppbyName(const fastring name)
+void DiscoveryJob::removeAppbyName(const std::string name)
 {
     if (name.compare("dde-cooperation") == 0)
         updateAnnouncShare(true);
     ((searchlight::Announcer*)_announcer_p)->removeAppbyName(name);
 }
 
-fastring DiscoveryJob::baseInfo() const
+std::string DiscoveryJob::baseInfo() const
 {
     QMutexLocker lk(&_lock);
     return ((searchlight::Announcer*)_announcer_p)->baseInfo();
 }
 
-co::list<fastring> DiscoveryJob::getNodes()
+std::list<std::string> DiscoveryJob::getNodes()
 {
-    co::list<fastring> notes;
+    std::list<std::string> notes;
     QReadLocker lk(&_dis_lock);
     for (auto it = _dis_node_maps.begin(); it != _dis_node_maps.end(); ++it) {
         notes.push_back(it->second.first);
@@ -242,7 +241,7 @@ void DiscoveryJob::searchDeviceByIp(const QString &ip, const bool remove)
     notifySearchResult(true, result.data);
 }
 
-void DiscoveryJob::notifySearchResult(bool result, const fastring &info)
+void DiscoveryJob::notifySearchResult(bool result, const std::string &info)
 {
     SearchDeviceResult ev;
     ev.result = result;
@@ -252,12 +251,12 @@ void DiscoveryJob::notifySearchResult(bool result, const fastring &info)
     SendIpcService::instance()->handleSendToClient("dde-cooperation", FRONT_SEARCH_IP_DEVICE_RESULT, jsonMsg);
 }
 
-fastring DiscoveryJob::udpSendPackage()
+std::string DiscoveryJob::udpSendPackage()
 {
     return ((searchlight::Announcer*)_announcer_p)->udpSendPackage();
 }
 
-fastring DiscoveryJob::nodeInfoStr()
+std::string DiscoveryJob::nodeInfoStr()
 {
     return ((searchlight::Announcer*)_announcer_p)->nodeInfoStr();
 }
@@ -268,10 +267,10 @@ void DiscoveryJob::handleUpdPackage(const QString &ip, const QString &msg)
             handle_message(msg.toStdString(), ip.toStdString(), false);
 }
 
-void DiscoveryJob::compareOldAndNew(const fastring &uid, const QString &cur,
-                                    const co::lru_map<fastring, std::pair<fastring, bool>>::iterator &it)
+void DiscoveryJob::compareOldAndNew(const std::string &uid, const QString &cur,
+                                    const compat::LruMap<std::string, std::pair<std::string, bool>>::iterator &it)
 {
-    co::Json oldnode, curnode;
+    compat::Json oldnode, curnode;
     oldnode.parse_from(it->second.first);
     curnode.parse_from(cur.toStdString());
     NodeInfo oldInfo, curInfo;
@@ -288,7 +287,7 @@ void DiscoveryJob::compareOldAndNew(const fastring &uid, const QString &cur,
         emit sigNodeChanged(true, cur);
         _dis_node_maps.insert(uid, std::make_pair(cur.toStdString(), true));
     } else if (!oldInfo.apps.empty() && !curInfo.apps.empty()) {
-        QMap<QString, fastring> oldname, curname;
+        QMap<QString, std::string> oldname, curname;
         for (const auto &app : curInfo.apps) {
             curname.insert(app.appname.c_str(), app.json);
         }

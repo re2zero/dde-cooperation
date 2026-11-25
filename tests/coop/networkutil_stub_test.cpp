@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2026 UnionTech Software Technology Co., Ltd.
+﻿// SPDX-FileCopyrightText: 2026 - 2026 UnionTech Software Technology Co., Ltd.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 // NetworkUtil stub 斩链测试
@@ -614,7 +614,7 @@ TEST(NetworkUtilMsgCb, ApplyInfoBranch)
     ASSERT_TRUE(static_cast<bool>(g_capturedMsgCb));
     std::string res;
     picojson::value v = applyMsgJson(ASK_NEEDCONFIRM, "nick_info", "10.0.0.1", 1234);
-    EXPECT_TRUE(g_capturedMsgCb(APPLY_INFO, v, &res));
+    EXPECT_TRUE(g_capturedMsgCb(APPLY_INFO, v, true, &res));
     EXPECT_FALSE(res.empty());
 }
 
@@ -623,7 +623,7 @@ TEST(NetworkUtilMsgCb, ApplyTransBranch)
     ensureMsgCbCaptured();
     std::string res;
     picojson::value v = applyMsgJson(ASK_NEEDCONFIRM, "nick_t", "10.0.0.2", 1234);
-    EXPECT_TRUE(g_capturedMsgCb(APPLY_TRANS, v, &res));
+    EXPECT_TRUE(g_capturedMsgCb(APPLY_TRANS, v, true, &res));
     EXPECT_FALSE(res.empty());
 }
 
@@ -632,7 +632,7 @@ TEST(NetworkUtilMsgCb, ApplyTransResultAccept)
     ensureMsgCbCaptured();
     std::string res;
     picojson::value v = applyMsgJson(REPLY_ACCEPT, "nick", "10.0.0.3", 1234);
-    EXPECT_TRUE(g_capturedMsgCb(APPLY_TRANS_RESULT, v, &res));
+    EXPECT_TRUE(g_capturedMsgCb(APPLY_TRANS_RESULT, v, true, &res));
 }
 
 TEST(NetworkUtilMsgCb, ApplyTransResultReject)
@@ -640,7 +640,7 @@ TEST(NetworkUtilMsgCb, ApplyTransResultReject)
     ensureMsgCbCaptured();
     std::string res;
     picojson::value v = applyMsgJson(REPLY_REJECT, "nick", "10.0.0.3", 1234);
-    EXPECT_TRUE(g_capturedMsgCb(APPLY_TRANS_RESULT, v, &res));
+    EXPECT_TRUE(g_capturedMsgCb(APPLY_TRANS_RESULT, v, true, &res));
 }
 
 TEST(NetworkUtilMsgCb, ApplyShareBranch)
@@ -648,7 +648,7 @@ TEST(NetworkUtilMsgCb, ApplyShareBranch)
     ensureMsgCbCaptured();
     std::string res;
     picojson::value v = applyMsgJson(ASK_NEEDCONFIRM, "nick_s", "10.0.0.4", 1234, "fp1");
-    EXPECT_TRUE(g_capturedMsgCb(APPLY_SHARE, v, &res));
+    EXPECT_TRUE(g_capturedMsgCb(APPLY_SHARE, v, true, &res));
     EXPECT_FALSE(res.empty());
 }
 
@@ -657,7 +657,7 @@ TEST(NetworkUtilMsgCb, ApplyShareResultAccept)
     ensureMsgCbCaptured();
     std::string res;
     picojson::value v = applyMsgJson(REPLY_ACCEPT, "nick", "10.0.0.5", 1234, "fp1");
-    EXPECT_TRUE(g_capturedMsgCb(APPLY_SHARE_RESULT, v, &res));
+    EXPECT_TRUE(g_capturedMsgCb(APPLY_SHARE_RESULT, v, true, &res));
 }
 
 TEST(NetworkUtilMsgCb, ApplyShareResultBusy)
@@ -665,7 +665,7 @@ TEST(NetworkUtilMsgCb, ApplyShareResultBusy)
     ensureMsgCbCaptured();
     std::string res;
     picojson::value v = applyMsgJson(REPLY_REJECT, "BUSY_COOPERATING", "10.0.0.5", 1234, "fp1");
-    EXPECT_TRUE(g_capturedMsgCb(APPLY_SHARE_RESULT, v, &res));
+    EXPECT_TRUE(g_capturedMsgCb(APPLY_SHARE_RESULT, v, true, &res));
 }
 
 TEST(NetworkUtilMsgCb, ApplyShareResultRefuse)
@@ -673,7 +673,7 @@ TEST(NetworkUtilMsgCb, ApplyShareResultRefuse)
     ensureMsgCbCaptured();
     std::string res;
     picojson::value v = applyMsgJson(REPLY_REJECT, "nick_refuse", "10.0.0.5", 1234, "fp1");
-    EXPECT_TRUE(g_capturedMsgCb(APPLY_SHARE_RESULT, v, &res));
+    EXPECT_TRUE(g_capturedMsgCb(APPLY_SHARE_RESULT, v, true, &res));
 }
 
 TEST(NetworkUtilMsgCb, ApplyShareStopBranch)
@@ -681,7 +681,7 @@ TEST(NetworkUtilMsgCb, ApplyShareStopBranch)
     ensureMsgCbCaptured();
     std::string res;
     picojson::value v = applyMsgJson(DO_DONE, "nick", "10.0.0.6", 1234);
-    EXPECT_TRUE(g_capturedMsgCb(APPLY_SHARE_STOP, v, &res));
+    EXPECT_TRUE(g_capturedMsgCb(APPLY_SHARE_STOP, v, true, &res));
 }
 
 TEST(NetworkUtilMsgCb, ApplyCanceledShare)
@@ -689,7 +689,7 @@ TEST(NetworkUtilMsgCb, ApplyCanceledShare)
     ensureMsgCbCaptured();
     std::string res;
     picojson::value v = applyMsgJson(ASK_CANCELED, "share", "10.0.0.7", 1234);
-    EXPECT_TRUE(g_capturedMsgCb(APPLY_CANCELED, v, &res));
+    EXPECT_TRUE(g_capturedMsgCb(APPLY_CANCELED, v, true, &res));
 }
 
 TEST(NetworkUtilMsgCb, ApplyCanceledTransfer)
@@ -697,7 +697,7 @@ TEST(NetworkUtilMsgCb, ApplyCanceledTransfer)
     ensureMsgCbCaptured();
     std::string res;
     picojson::value v = applyMsgJson(ASK_CANCELED, "transfer", "10.0.0.7", 1234);
-    EXPECT_TRUE(g_capturedMsgCb(APPLY_CANCELED, v, &res));
+    EXPECT_TRUE(g_capturedMsgCb(APPLY_CANCELED, v, true, &res));
 }
 
 TEST(NetworkUtilMsgCb, ApplyCanceledUnknownType)
@@ -705,7 +705,7 @@ TEST(NetworkUtilMsgCb, ApplyCanceledUnknownType)
     ensureMsgCbCaptured();
     std::string res;
     picojson::value v = applyMsgJson(ASK_CANCELED, "unknown_type", "10.0.0.7", 1234);
-    EXPECT_TRUE(g_capturedMsgCb(APPLY_CANCELED, v, &res));
+    EXPECT_TRUE(g_capturedMsgCb(APPLY_CANCELED, v, true, &res));
 }
 
 #ifdef ENABLE_PHONE
@@ -715,7 +715,7 @@ TEST(NetworkUtilMsgCb, ApplyScanConnectWithResolution)
     std::string res;
     // nick 含 "name=2400x1080" 走分辨率解析分支
     picojson::value v = applyMsgJson(ASK_NEEDCONFIRM, "pixel 7=2400x1080", "10.0.0.8", 1234);
-    EXPECT_TRUE(g_capturedMsgCb(APPLY_SCAN_CONNECT, v, &res));
+    EXPECT_TRUE(g_capturedMsgCb(APPLY_SCAN_CONNECT, v, true, &res));
 }
 
 TEST(NetworkUtilMsgCb, ApplyScanConnectNoResolution)
@@ -723,7 +723,7 @@ TEST(NetworkUtilMsgCb, ApplyScanConnectNoResolution)
     ensureMsgCbCaptured();
     std::string res;
     picojson::value v = applyMsgJson(ASK_NEEDCONFIRM, "plain_device", "10.0.0.9", 1234);
-    EXPECT_TRUE(g_capturedMsgCb(APPLY_SCAN_CONNECT, v, &res));
+    EXPECT_TRUE(g_capturedMsgCb(APPLY_SCAN_CONNECT, v, true, &res));
 }
 
 TEST(NetworkUtilMsgCb, ApplyScanConnectBadResolution)
@@ -732,7 +732,7 @@ TEST(NetworkUtilMsgCb, ApplyScanConnectBadResolution)
     std::string res;
     // 含 "=" 但分辨率非 "WxH" 形式 → resolutionParts.size()!=2 分支
     picojson::value v = applyMsgJson(ASK_NEEDCONFIRM, "dev=badformat", "10.0.0.10", 1234);
-    EXPECT_TRUE(g_capturedMsgCb(APPLY_SCAN_CONNECT, v, &res));
+    EXPECT_TRUE(g_capturedMsgCb(APPLY_SCAN_CONNECT, v, true, &res));
 }
 
 TEST(NetworkUtilMsgCb, ApplyProjectionBranch)
@@ -740,7 +740,7 @@ TEST(NetworkUtilMsgCb, ApplyProjectionBranch)
     ensureMsgCbCaptured();
     std::string res;
     picojson::value v = applyMsgJson(ASK_NEEDCONFIRM, "nick_p", "10.0.0.11", 1234);
-    EXPECT_TRUE(g_capturedMsgCb(APPLY_PROJECTION, v, &res));
+    EXPECT_TRUE(g_capturedMsgCb(APPLY_PROJECTION, v, true, &res));
 }
 
 TEST(NetworkUtilMsgCb, ApplyProjectionStopBranch)
@@ -748,14 +748,27 @@ TEST(NetworkUtilMsgCb, ApplyProjectionStopBranch)
     ensureMsgCbCaptured();
     std::string res;
     picojson::value v = applyMsgJson(DO_DONE, "nick_p", "10.0.0.12", 1234);
-    EXPECT_TRUE(g_capturedMsgCb(APPLY_PROJECTION_STOP, v, &res));
+    EXPECT_TRUE(g_capturedMsgCb(APPLY_PROJECTION_STOP, v, true, &res));
 }
 #endif
+
+TEST(NetworkUtilMsgCb, ApplyInfoUnauthenticatedIsReduced)
+{
+    ensureMsgCbCaptured();
+    ASSERT_TRUE(static_cast<bool>(g_capturedMsgCb));
+    std::string res;
+    picojson::value v = applyMsgJson(ASK_NEEDCONFIRM, "nick_info", "10.0.0.1", 1234);
+    EXPECT_TRUE(g_capturedMsgCb(APPLY_INFO, v, false, &res));
+    EXPECT_FALSE(res.empty());
+    // Storage path and sharing preferences are not public device info.
+    EXPECT_EQ(std::string::npos, res.find("StoragePath"));
+    EXPECT_EQ(std::string::npos, res.find("ClipboardShare"));
+}
 
 TEST(NetworkUtilMsgCb, UnknownMaskReturnsFalse)
 {
     ensureMsgCbCaptured();
     std::string res;
     picojson::value v = applyMsgJson(0, "x", "10.0.0.99", 1234);
-    EXPECT_FALSE(g_capturedMsgCb(99999, v, &res));
+    EXPECT_FALSE(g_capturedMsgCb(99999, v, true, &res));
 }

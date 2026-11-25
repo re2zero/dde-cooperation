@@ -22,8 +22,11 @@
 using namespace deepin_cross;
 
 #ifdef ENABLE_AUTO_UNIT_TEST
+#if defined(__GNUC__) || defined(__clang__)
 // 测试模式: 显式 flush gcov 覆盖率(因 SingleApplication 析构里的 _exit 跳过 atexit)。
-extern "C" void __gcov_dump(void);
+// 只有覆盖率插桩的构建才链接 libgcov，这里声明为弱引用，未插桩时符号为空，链接不报错。
+extern "C" void __gcov_dump(void) __attribute__((weak));
+#endif
 #endif
 
 SingleApplication::SingleApplication(int &argc, char **argv, int)
@@ -46,8 +49,11 @@ SingleApplication::~SingleApplication()
     // if (qAppName() == "dde-cooperation-daemon") {
         // daemon process should exit after all work is done
 #ifdef ENABLE_AUTO_UNIT_TEST
+#if defined(__GNUC__) || defined(__clang__)
         // 测试模式: _exit 会跳过 atexit 导致 gcov 不落盘, 这里显式 flush 覆盖率。
-        __gcov_dump();
+        if (__gcov_dump)
+            __gcov_dump();
+#endif
 #endif
         _exit(0); // FIXME: always double free if without this.
     // }

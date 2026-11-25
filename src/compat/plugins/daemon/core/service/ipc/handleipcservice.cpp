@@ -1,4 +1,4 @@
-﻿// SPDX-FileCopyrightText: 2023 UnionTech Software Technology Co., Ltd.
+// SPDX-FileCopyrightText: 2023 - 2026 UnionTech Software Technology Co., Ltd.
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -15,6 +15,7 @@
 #include "service/discoveryjob.h"
 #include "utils/config.h"
 #include "service/jobmanager.h"
+#include "service/rpc/loginsessionmanager.h"
 #include "protocol/version.h"
 
 #include <QPointer>
@@ -32,7 +33,7 @@ HandleIpcService::~HandleIpcService()
 QString HandleIpcService::bindSignal(const QString& appname, const QString& signalname)
 {
     // gen new one
-    QString sesid = co::randstr(appname.toStdString().c_str(), 8).c_str(); // 长度为8的16进制字符串
+    QString sesid = compat::randstr(appname.toStdString().c_str(), 8).c_str(); // 长度为8的16进制字符串
     _sessionIDs.insert(appname, sesid);
     // 创建新的sessionid
     SendIpcService::instance()->handleSaveSession(appname, sesid, signalname);
@@ -56,14 +57,14 @@ QString HandleIpcService::getDiscovery()
     auto nodes = DiscoveryJob::instance()->getNodes();
     NodeList nodeInfos;
     for (const auto &node : nodes) {
-        co::Json nodejs;
+        compat::Json nodejs;
         nodejs.parse_from(node);
         NodeInfo info;
         info.from_json(nodejs);
         nodeInfos.peers.push_back(info);
     }
     auto _base = DiscoveryJob::instance()->baseInfo();
-    co::Json _base_json;
+    compat::Json _base_json;
     if (_base_json.parse_from(_base)) {
         NodePeerInfo _info;
         _info.from_json(_base_json);
@@ -87,7 +88,7 @@ void HandleIpcService::setAuthPassword(const QString& password)
         //refresh as random password
         DaemonConfig::instance()->refreshPin();
     } else {
-        fastring pwd = password.toStdString();
+        std::string pwd = password.toStdString();
         DaemonConfig::instance()->setPin(pwd);
     }
 }
@@ -96,6 +97,11 @@ QString HandleIpcService::getAuthPassword()
 {
     QString pin = DaemonConfig::instance()->getPin().c_str();
     return pin;
+}
+
+void HandleIpcService::doReplyLoginConfirm(const QString &ip, bool agree)
+{
+    LoginSessionManager::instance()->replyConfirmation(ip, agree);
 }
 
 void HandleIpcService::sendMiscMessage(const QString& appname, const QString &jsonmsg)
@@ -335,12 +341,12 @@ void HandleIpcService::newTransSendJob(QString session, const QString targetSess
     }
 
     int32 id = jobId;
-    fastring who = s.toStdString();
-    fastring savepath = savedir.toStdString();
+    std::string who = s.toStdString();
+    std::string savepath = savedir.toStdString();
 
-    co::Json pathjson;
+    compat::Json pathjson;
     for (QString path : paths) {
-        fastring filepath = path.toStdString();
+        std::string filepath = path.toStdString();
         pathjson.push_back(filepath);
     }
     FileTransJob job;
@@ -361,12 +367,12 @@ void HandleIpcService::newTransSendJob(QString session, const QString targetSess
     JobManager::instance()->handleRemoteRequestJob(job.as_json().str().c_str(), nullptr);
 }
 
-void HandleIpcService::handleNodeRegister(bool unreg, const co::Json &info)
+void HandleIpcService::handleNodeRegister(bool unreg, const compat::Json &info)
 {
     if (unreg) {
         AppPeerInfo appPeer;
         appPeer.from_json(info);
-        fastring appname = appPeer.appname;
+        std::string appname = appPeer.appname;
         // 移除ping
         SendRpcService::instance()->removePing(appname.c_str());
         DLOG << "Unregistering app:" << appname.c_str()
@@ -377,7 +383,7 @@ void HandleIpcService::handleNodeRegister(bool unreg, const co::Json &info)
     DiscoveryJob::instance()->updateAnnouncApp(unreg, info.str());
 }
 
-void HandleIpcService::handleBackApplyTransFiles(co::Json param)
+void HandleIpcService::handleBackApplyTransFiles(compat::Json param)
 {
      // 远程发送
     ApplyTransFiles info;
@@ -395,7 +401,7 @@ void HandleIpcService::handleBackApplyTransFiles(co::Json param)
 //     });
 // }
 
-void HandleIpcService::handleTryConnect(co::Json json)
+void HandleIpcService::handleTryConnect(compat::Json json)
 {
     ipc::ConnectParam param;
     param.from_json(json);
@@ -429,7 +435,7 @@ void HandleIpcService::handleTryConnect(co::Json json)
 
 }
 
-bool HandleIpcService::handleJobActions(const uint type, co::Json &msg)
+bool HandleIpcService::handleJobActions(const uint type, compat::Json &msg)
 {
     ipc::TransJobParam param;
     param.from_json(msg);
@@ -456,7 +462,7 @@ bool HandleIpcService::handleJobActions(const uint type, co::Json &msg)
     return JobManager::instance()->doJobAction(type, jobid);
 }
 
-void HandleIpcService::handleShareConnect(co::Json json)
+void HandleIpcService::handleShareConnect(compat::Json json)
 {
     ShareConnectApply param;
     param.from_json(json);
@@ -475,7 +481,7 @@ void HandleIpcService::handleShareConnect(co::Json json)
     Comshare::instance()->updateStatus(CURRENT_STATUS_SHARE_CONNECT);
 }
 
-void HandleIpcService::handleShareDisConnect(co::Json json)
+void HandleIpcService::handleShareDisConnect(compat::Json json)
 {
     Comshare::instance()->updateStatus(CURRENT_STATUS_DISCONNECT);
     ShareDisConnect info;
@@ -486,7 +492,7 @@ void HandleIpcService::handleShareDisConnect(co::Json json)
                                                info.as_json().str().c_str());
 }
 
-void HandleIpcService::handleShareConnectReply(co::Json json)
+void HandleIpcService::handleShareConnectReply(compat::Json json)
 {
     ShareConnectReply reply;
     reply.from_json(json);
@@ -497,7 +503,7 @@ void HandleIpcService::handleShareConnectReply(co::Json json)
                                                reply.appName.c_str(), json.str().c_str());
 }
 // 取消协同申请
-void HandleIpcService::handleShareConnectDisApply(co::Json json)
+void HandleIpcService::handleShareConnectDisApply(compat::Json json)
 {
     Comshare::instance()->updateStatus(CURRENT_STATUS_DISCONNECT);
     ShareConnectDisApply reply;
@@ -510,7 +516,7 @@ void HandleIpcService::handleShareConnectDisApply(co::Json json)
 
 }
 
-void HandleIpcService::handleShareStop(co::Json json)
+void HandleIpcService::handleShareStop(compat::Json json)
 {
     ShareStop st;
     st.from_json(json);
@@ -521,7 +527,7 @@ void HandleIpcService::handleShareStop(co::Json json)
     Comshare::instance()->updateStatus(CURRENT_STATUS_DISCONNECT);
 }
 
-void HandleIpcService::handleDisConnectCb(co::Json json)
+void HandleIpcService::handleDisConnectCb(compat::Json json)
 {
     ShareDisConnect info;
     info.from_json(json);
@@ -534,7 +540,7 @@ void HandleIpcService::handleDisConnectCb(co::Json json)
 }
 
 
-void HandleIpcService::handleSearchDevice(co::Json json)
+void HandleIpcService::handleSearchDevice(compat::Json json)
 {
     SearchDevice de;
     de.from_json(json);

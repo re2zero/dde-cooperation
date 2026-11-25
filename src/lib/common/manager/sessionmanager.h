@@ -34,8 +34,14 @@ public:
 
     void sessionListen(int port);
     bool sessionPing(QString ip, int port);
+    // An empty password means "use the stored pairing token, ask the peer to
+    // pair when there is none".
     int sessionConnect(QString ip, int port, QString password);
     void sessionDisconnect(QString ip);
+    /// Persist the token the peer issued to us after a successful login.
+    void storePeerToken(const QString &ip, const QString &token);
+    /// Answer a pending v25 pairing confirmation from the frontend.
+    bool replyPairing(const QString &ip, bool agree);
     // useTunnel makes the file server listen on loopback only and announces a
     // temporary tunnel service instead of a directly reachable endpoint.
     void sendFiles(QString &ip, int port, QStringList paths, bool useTunnel = false);
@@ -72,6 +78,9 @@ signals:
 
     // raw tunnel frame received from the peer
     void tunnelMessageReceived(int mask, const QByteArray &payload, const QString &remote);
+
+    // A peer without a token wants to pair; the GUI must ask the user.
+    void pairingConfirmRequested(const QString &ip, const QString &name);
 
 public slots:
     void handleTransData(const QString endpoint, const QStringList nameVector,

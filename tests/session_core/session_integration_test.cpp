@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2026 UnionTech Software Technology Co., Ltd.
+﻿// SPDX-FileCopyrightText: 2026 - 2026 UnionTech Software Technology Co., Ltd.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include <gtest/gtest.h>
@@ -25,13 +25,15 @@ public:
     int msgCount = 0;
     bool silent = false;
 
-    void onReceivedMessage(const proto::OriginMessage &req, proto::OriginMessage *resp) override
+    bool onReceivedMessage(const proto::OriginMessage &req, const std::string &,
+                           proto::OriginMessage *resp) override
     {
         msgCount++;
         resp->id = req.id;
         resp->mask = req.mask;
         if (!silent)
             resp->json_msg = R"({"reply":"ok"})";
+        return true;
     }
 
     bool onStateChanged(int state, std::string &msg) override

@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2026 UnionTech Software Technology Co., Ltd.
+﻿// SPDX-FileCopyrightText: 2026 - 2026 UnionTech Software Technology Co., Ltd.
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -25,16 +25,21 @@ class TestSessionCallbacks : public SessionCallInterface
 public:
     int lastState = -100;
     std::string lastMsg;
+    std::string lastRemote;
     int callCount = 0;
     bool stateResult = true;
+    bool allowMessages = true;
 
-    void onReceivedMessage(const proto::OriginMessage &request, proto::OriginMessage *response) override
+    bool onReceivedMessage(const proto::OriginMessage &request, const std::string &remote,
+                           proto::OriginMessage *response) override
     {
+        lastRemote = remote;
         if (response) {
             response->id = request.id;
             response->mask = request.mask;
             response->json_msg = request.json_msg;
         }
+        return allowMessages;
     }
 
     bool onStateChanged(int state, std::string &msg) override

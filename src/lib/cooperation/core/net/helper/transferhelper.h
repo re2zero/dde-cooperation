@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2023 UnionTech Software Technology Co., Ltd.
+﻿// SPDX-FileCopyrightText: 2023 - 2026 UnionTech Software Technology Co., Ltd.
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -65,6 +65,8 @@ public Q_SLOTS:
     // compat old protocol
     void compatTransJobStatusChanged(int id, int result, const QString &msg);
     void compatFileTransStatusChanged(quint64 total, quint64 current, quint64 millisec);
+    // A v20 peer without a PIN wants to connect; ask the local user.
+    void notifyLoginRequest(const QString &ip, const QString &name);
 
     // exception: network connection(ping out) or other io
     void onTransferExcepted(int type, const QString &remote);
@@ -77,6 +79,7 @@ private:
     ~TransferHelper();
 
     void updateTransProgress(uint64_t current);
+    void replyLoginConfirm(bool agree);
 
 private:
     QSharedPointer<TransferHelperPrivate> d { nullptr };

@@ -4,7 +4,9 @@
 
 #include "protoserver.h"
 
-using MessageHandler = std::function<void(const proto::OriginMessage &request, proto::OriginMessage *response)>;
+using MessageHandler = std::function<bool(const proto::OriginMessage &request,
+                                          const std::string &remote,
+                                          proto::OriginMessage *response)>;
 using NotifyHandler = std::function<void(const std::string &addr)>;
 using RealIPHandler = std::function<void(const std::string &real_ip, const std::string &remote_ip)>;
 using TunnelHandler = std::function<bool(const std::string &remote, const proto::OriginMessage &request)>;
@@ -59,11 +61,14 @@ protected:
         // Tunnel frames are a raw byte channel. They must be routed before the
         // JSON validation and before the RPC response matching logic.
         std::string remote;
+        std::string remote_ip;
         try {
-            remote = socket().remote_endpoint().address().to_string();
+            const auto endpoint = socket().remote_endpoint();
+            remote_ip = endpoint.address().to_string();
+            remote = "s:" + remote_ip + ":" + std::to_string(endpoint.port());
         } catch (...) {
         }
-        if (_tunnelhandler && _tunnelhandler(remote, request))
+        if (_tunnelhandler && _tunnelhandler(remote_ip, request))
             return;
 
         // Validate request
@@ -80,7 +85,15 @@ protected:
         proto::OriginMessage response;
 
         if (_msghandler) {
-            _msghandler(request, &response);
+            if (!_msghandler(request, remote, &response)) {
+                // The peer is not allowed to send this request yet (it has not
+                // logged in). Tell it instead of leaving it waiting.
+                proto::MessageReject reject;
+                reject.id = request.id;
+                reject.error = "authentication required";
+                send(reject);
+                return;
+            }
         } else {
             response.id = request.id;
             response.mask = request.mask;
@@ -264,14 +277,17 @@ std::shared_ptr<NetUtil::Asio::SSLSession>
 ProtoServer::CreateSession(const std::shared_ptr<NetUtil::Asio::SSLServer> &server)
 {
     // data and state handle callback
-    MessageHandler msg_cb([this](const proto::OriginMessage &request, proto::OriginMessage *response) {
+    MessageHandler msg_cb([this](const proto::OriginMessage &request, const std::string &remote,
+                                 proto::OriginMessage *response) {
         // A response is matched by its request id. A message that does not
         // match any pending request was initiated by the peer and is handled
         // as such, even while another RPC is still waiting for its result.
         if (FinalClient::onReceiveResponse(request))
-            return;
+            return true;
 
-        _callbacks->onReceivedMessage(request, response);
+        if (!_callbacks)
+            return false;
+        return _callbacks->onReceivedMessage(request, remote, response);
     });
 
     NotifyHandler nft_cb([this](const std::string &addr) {

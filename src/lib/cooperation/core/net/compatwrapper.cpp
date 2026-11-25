@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2023 UnionTech Software Technology Co., Ltd.
+﻿// SPDX-FileCopyrightText: 2023 - 2026 UnionTech Software Technology Co., Ltd.
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -137,6 +137,19 @@ void CompatWrapperPrivate::ipcCompatSlot(int type, const QString& msg)
                                           Qt::QueuedConnection,
                                           Q_ARG(StringMap, infoMap));
         }
+    } break;
+    case ipc::FRONT_LOGIN_CONFIRM: {
+        DLOG << "Received FRONT_LOGIN_CONFIRM message";
+        QString ip;
+        QString name;
+        if (json_obj.is<picojson::object>()) {
+            if (json_obj.contains("ip"))
+                ip = QString::fromStdString(json_obj.get("ip").to_str());
+            if (json_obj.contains("name"))
+                name = QString::fromStdString(json_obj.get("name").to_str());
+        }
+        if (!ip.isEmpty())
+            emit q->compatLoginConfirm(ip, name);
     } break;
     case ipc::FRONT_CONNECT_CB: {
         DLOG << "Received FRONT_CONNECT_CB message";

@@ -1,9 +1,10 @@
-﻿// SPDX-FileCopyrightText: 2023 - 2026 UnionTech Software Technology Co., Ltd.
+// SPDX-FileCopyrightText: 2023 - 2026 UnionTech Software Technology Co., Ltd.
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "sessionworker.h"
 #include "secureconfig.h"
+#include "peertokenstore.h"
 #include "sessionmanager.h"
 
 #include "common/log.h"
@@ -14,6 +15,8 @@
 #include <QCoreApplication>
 #include <QStorageInfo>
 #include <QUuid>
+#include <QDateTime>
+#include <QMutexLocker>
 
 SessionWorker::SessionWorker(QObject *parent)
     : QObject(parent)
@@ -56,16 +59,249 @@ bool SessionWorker::onTunnelMessage(const std::string &remote, const proto::Orig
     return true;
 }
 
-void SessionWorker::onReceivedMessage(const proto::OriginMessage &request, proto::OriginMessage *response)
+namespace {
+
+// Authentication rate limiting. A wrong token is cheap to try, so back off per
+// source address with a doubling window.
+constexpr int kMaxFailuresBeforeBlock = 5;
+constexpr qint64 kInitialBlockMs = 30 * 1000;
+constexpr qint64 kMaxBlockMs = 5 * 60 * 1000;
+constexpr int kMaxFailureEntries = 512;
+constexpr int kMaxPendingPairings = 4;
+
+}   // namespace
+
+QString SessionWorker::peerIpOf(const std::string &remote)
 {
-    DLOG << "onReceivedMessage id=" << request.id << " mask=" << request.mask << " json_msg: " << request.json_msg;
+    const QString id = QString::fromStdString(remote);
+    // Accepted server session: "s:ip:port".
+    if (id.startsWith(QStringLiteral("s:"))) {
+        const QString rest = id.mid(2);
+        const int idx = rest.lastIndexOf(QLatin1Char(':'));
+        return idx > 0 ? rest.left(idx) : rest;
+    }
+    // Dialed client session: "c:ip".
+    if (id.startsWith(QStringLiteral("c:")))
+        return id.mid(2);
+    return id;
+}
+
+bool SessionWorker::isSessionAuthenticated(const std::string &remote) const
+{
+    const QString id = QString::fromStdString(remote);
+    QMutexLocker lk(&_state_lock);
+    if (id.startsWith(QStringLiteral("s:"))) {
+        // Authentication is bound to the accepted connection, not just the
+        // source IP, so hosts behind the same NAT cannot reuse it.
+        return _authenticated_conns.contains(id);
+    }
+    if (id.startsWith(QStringLiteral("c:"))) {
+        // The peer we dialed logged us in; requests it sends back over that
+        // pair are trusted.
+        return _login_hosts.value(id.mid(2), false);
+    }
+    return false;
+}
+
+bool SessionWorker::constantTimeEquals(const std::string &lhs, const std::string &rhs)
+{
+    // An empty value never authenticates.
+    if (lhs.empty() || rhs.empty())
+        return false;
+    if (lhs.size() != rhs.size())
+        return false;
+    unsigned char diff = 0;
+    for (size_t i = 0; i < lhs.size(); ++i)
+        diff |= static_cast<unsigned char>(lhs[i] ^ rhs[i]);
+    return diff == 0;
+}
+
+bool SessionWorker::isBlocked(const QString &ip)
+{
+    if (ip.isEmpty())
+        return false;
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    QMutexLocker lk(&_failure_lock);
+    auto it = _auth_failures.find(ip);
+    if (it == _auth_failures.end())
+        return false;
+    return it->blockedUntilMs > now;
+}
+
+void SessionWorker::recordFailure(const QString &ip)
+{
+    if (ip.isEmpty())
+        return;
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    QMutexLocker lk(&_failure_lock);
+    FailureEntry &entry = _auth_failures[ip];
+    entry.lastFailureMs = now;
+    ++entry.failures;
+    if (entry.failures >= kMaxFailuresBeforeBlock) {
+        const int steps = entry.failures - kMaxFailuresBeforeBlock;
+        qint64 window = kInitialBlockMs;
+        for (int i = 0; i < steps && window < kMaxBlockMs; ++i)
+            window *= 2;
+        entry.blockedUntilMs = now + qMin(window, kMaxBlockMs);
+    }
+    while (_auth_failures.size() > kMaxFailureEntries)
+        _auth_failures.erase(_auth_failures.begin());
+}
+
+bool SessionWorker::requestPairing(const QString &ip, const QString &name)
+{
+    if (ip.isEmpty())
+        return false;
+
+    QSharedPointer<PairingRequest> pending(new PairingRequest);
+    {
+        QMutexLocker lk(&_pairing_lock);
+        if (_pending_pairings.size() >= kMaxPendingPairings || _pending_pairings.contains(ip))
+            return false;
+        _pending_pairings.insert(ip, pending);
+    }
+
+    emit pairingRequested(ip, name);
+
+    bool decided = false;
+    bool agreed = false;
+    {
+        QMutexLocker lk(&pending->mutex);
+        // A non-positive timeout means "no GUI" (tests); QWaitCondition
+        // rejects a zero timeout on some platforms.
+        if (!pending->decided && _pairingTimeoutMs > 0)
+            pending->cond.wait(&pending->mutex, static_cast<unsigned long>(_pairingTimeoutMs));
+        decided = pending->decided;
+        agreed = pending->agreed;
+    }
+
+    {
+        QMutexLocker lk(&_pairing_lock);
+        _pending_pairings.remove(ip);
+    }
+    return decided && agreed;
+}
+
+bool SessionWorker::replyPairing(const QString &ip, bool agree)
+{
+    QSharedPointer<PairingRequest> pending;
+    {
+        QMutexLocker lk(&_pairing_lock);
+        pending = _pending_pairings.value(ip);
+    }
+    if (pending.isNull())
+        return false;
+
+    QMutexLocker lk(&pending->mutex);
+    pending->decided = true;
+    pending->agreed = agree;
+    pending->cond.wakeAll();
+    return true;
+}
+
+bool SessionWorker::handleLogin(const picojson::value &json, const proto::OriginMessage &request,
+                               const std::string &remote, proto::OriginMessage *response)
+{
+    LoginMessage req, res;
+    req.from_json(json);
+
+    const QString peerIp = peerIpOf(remote);
+    const QString claimedName = QString::fromStdString(req.nick);
+    bool authOK = false;
+    QString errorText;
+
+    if (peerIp.isEmpty()) {
+        errorText = QStringLiteral("Invalid source address");
+    } else if (isBlocked(peerIp)) {
+        errorText = QStringLiteral("Too many attempts, try again later");
+    } else {
+        const QString rawSecret = QString::fromStdString(req.auth);
+        const QByteArray decoded = QByteArray::fromBase64(rawSecret.toUtf8());
+        const QString decodedSecret = QString::fromUtf8(decoded);
+        // Peers commonly base64 the secret; accept a raw token as well.
+        const auto matchesExpected = [&](const QString &expected) {
+            if (expected.isEmpty())
+                return false;
+            return constantTimeEquals(decodedSecret.toStdString(), expected.toStdString())
+                    || constantTimeEquals(rawSecret.toStdString(), expected.toStdString());
+        };
+
+        if (rawSecret.isEmpty()) {
+            // First contact: the local user approves the peer and a token is
+            // issued. Later logins present that token and need no prompt.
+            if (requestPairing(peerIp, claimedName)) {
+                const QString token = PeerTokenStore::generateToken();
+                PeerTokenStore::instance()->setIssuedToken(peerIp, token);
+                res.auth = token.toStdString();
+                authOK = true;
+            } else {
+                errorText = QStringLiteral("Login confirmation rejected");
+            }
+        } else {
+            QString pairingPin;
+            {
+                QMutexLocker lk(&_state_lock);
+                pairingPin = _savedPin;
+            }
+            const QString issued = PeerTokenStore::instance()->issuedToken(peerIp);
+            if (matchesExpected(pairingPin)) {
+                // QR / PIN pairing upgrades the peer to token authentication.
+                const QString token = PeerTokenStore::generateToken();
+                PeerTokenStore::instance()->setIssuedToken(peerIp, token);
+                res.auth = token.toStdString();
+                authOK = true;
+            } else if (matchesExpected(issued)) {
+                res.auth = issued.toStdString();
+                authOK = true;
+            } else {
+                errorText = QStringLiteral("Invalid auth code");
+            }
+        }
+    }
+
+    if (authOK) {
+        {
+            QMutexLocker lk(&_state_lock);
+            _authenticated_conns.insert(QString::fromStdString(remote));
+        }
+        {
+            QMutexLocker lk(&_failure_lock);
+            _auth_failures.remove(peerIp);
+        }
+        updateLogin(peerIp, true);
+    } else {
+        ELOG << "login denied for:" << peerIp.toStdString() << "reason:" << errorText.toStdString();
+        recordFailure(peerIp);
+    }
+
+    res.name = deepin_cross::CommonUitls::getFirstIp();
+    response->json_msg = res.as_json().serialize();
+
+    const QString nice = QString::fromStdString(req.name);
+    if (authOK) {
+        DLOG << "PIN code matched";
+        emit onConnectChanged(LOGIN_SUCCESS, nice);
+    } else {
+        DLOG << "PIN code mismatch";
+        emit onConnectChanged(LOGIN_DENIED, nice);
+    }
+    return true;
+}
+
+bool SessionWorker::onReceivedMessage(const proto::OriginMessage &request,
+                                      const std::string &remote,
+                                      proto::OriginMessage *response)
+{
+    DLOG << "onReceivedMessage id=" << request.id << " mask=" << request.mask
+         << " remote=" << remote
+         << " json_msg: " << (request.mask == REQ_LOGIN ? "<redacted>" : request.json_msg);
     // mark this rpc has received.
     response->id = request.id;
     response->mask = DO_SUCCESS;
 
     if (request.json_msg.empty()) {
         DLOG << "empty json message: ";
-        return;
+        return true;
     }
 #ifdef QT_DEBUG
     DLOG << "onReceivedMessage mask=" << request.mask << " json_msg: " << request.json_msg << std::endl;
@@ -75,50 +311,35 @@ void SessionWorker::onReceivedMessage(const proto::OriginMessage &request, proto
     std::string err = picojson::parse(v, request.json_msg);
     if (!err.empty()) {
         DLOG << "Failed to parse JSON data: " << err;
-        return;
+        return true;
+    }
+
+    if (request.mask == REQ_LOGIN)
+        return handleLogin(v, request, remote, response);
+
+    const bool authenticated = isSessionAuthenticated(remote);
+    // APPLY_INFO is the discovery probe; before pairing it only returns public
+    // device data. Every other request needs an authenticated session.
+    if (!authenticated && request.mask != SESSION_APPLY_INFO) {
+        WLOG << "reject unauthenticated request mask:" << request.mask
+             << "remote:" << remote;
+        return false;
     }
 
     // if these exten mssages are handled, return
     if (_extMsghandler) {
         DLOG << "External message handler exists, trying to handle message";
         std::string res_json;
-        bool handled = _extMsghandler(request.mask, v, &res_json);
+        bool handled = _extMsghandler(request.mask, v, authenticated, &res_json);
         if (handled) {
             DLOG << "Message handled by external handler";
             response->json_msg = res_json;
-            return;
+            return true;
         }
     }
 
     int type = request.mask;
     switch (type) {
-    case REQ_LOGIN: {
-        LoginMessage req, res;
-        req.from_json(v);
-        DLOG << "Login: " << req.name << " " << req.auth;
-
-        QString nice = QString::fromStdString(req.name);
-        QByteArray pinByte = QByteArray::fromStdString(req.auth);
-        QString dePin = QString::fromUtf8(QByteArray::fromBase64(pinByte));
-        if (dePin == _savedPin) {
-            DLOG << "PIN code matched";
-            res.auth = QUuid::createUuid().toString(QUuid::WithoutBraces).toStdString();
-            updateLogin(nice, true);
-            emit onConnectChanged(LOGIN_SUCCESS, nice);
-        } else {
-            DLOG << "PIN code mismatch";
-            // return empty auth token.
-            res.auth = "";
-            emit onConnectChanged(LOGIN_DENIED, nice);
-
-            emit onRejectConnection();
-        }
-
-        res.name = deepin_cross::CommonUitls::getFirstIp();
-        response->json_msg = res.as_json().serialize();
-        return;
-    }
-    break;
     case REQ_FREE_SPACE: {
         DLOG << "Handling REQ_FREE_SPACE";
         FreeSpaceMessage req, res;
@@ -134,12 +355,12 @@ void SessionWorker::onReceivedMessage(const proto::OriginMessage &request, proto
         TransDataMessage req, res;
         req.from_json(v);
 
-        if (_savedPin.isEmpty() || _login_hosts.isEmpty()) {
+        if (!authenticated) {
             WLOG << "REQ_TRANS_DATAS rejected: no authenticated session";
             res.id = req.id;
             res.flag = false;
             response->json_msg = res.as_json().serialize();
-            return;
+            return true;
         }
 
         QString endpoint = QString::fromStdString(req.endpoint);
@@ -163,7 +384,7 @@ void SessionWorker::onReceivedMessage(const proto::OriginMessage &request, proto
             QString oneName = nameList.join(";");
             emit onTransCount(oneName, total);
         }
-        return;
+        return true;
     }
     break;
     case REQ_TRANS_CANCLE: {
@@ -180,7 +401,7 @@ void SessionWorker::onReceivedMessage(const proto::OriginMessage &request, proto
         QString jobid = QString::fromStdString(req.id);
         QString reason = QString::fromStdString(req.reason);
         emit onCancelJob(jobid, reason);
-        return;
+        return true;
     }
     break;
     case CAST_INFO: {
@@ -206,13 +427,14 @@ void SessionWorker::onReceivedMessage(const proto::OriginMessage &request, proto
         response->json_msg = res.as_json().serialize();
 
         emit onTransCount(oneName, total);
-        return;
+        return true;
     }
     break;
     default:
         DLOG << "unkown type: " << type;
         break;
     }
+    return true;
 }
 
 bool SessionWorker::onStateChanged(int state, std::string &msg)
@@ -292,6 +514,17 @@ void SessionWorker::setExtMessageHandler(ExtenMessageHandler cb)
 void SessionWorker::stop()
 {
     DLOG << "Stopping session worker";
+    // Release any handler blocked on the user's pairing decision so shutdown
+    // does not wait for the whole confirmation timeout.
+    {
+        QMutexLocker lk(&_pairing_lock);
+        for (auto &pending : _pending_pairings) {
+            QMutexLocker pendingLock(&pending->mutex);
+            pending->decided = true;
+            pending->agreed = false;
+            pending->cond.wakeAll();
+        }
+    }
     if (_server) {
         DLOG << "Stopping server";
         // Stop the server
@@ -437,15 +670,31 @@ void SessionWorker::sendTunnelMessage(const QString &target, int mask, const QBy
 
 void SessionWorker::updatePincode(QString code)
 {
-    DLOG << "Updating pincode";
+    DLOG << "Updating pairing pincode";
+    QMutexLocker lk(&_state_lock);
+    // This is the QR / data-transfer PIN. It is never a compile-time constant.
     _savedPin = code;
+}
+
+void SessionWorker::storePeerToken(const QString &ip, const QString &token)
+{
+    if (ip.isEmpty() || token.isEmpty())
+        return;
+    DLOG << "Storing pairing token for:" << ip.toStdString();
+    PeerTokenStore::instance()->setClientToken(ip, token);
 }
 
 void SessionWorker::updateLogin(QString ip, bool logined)
 {
     DLOG << "Updating login status for ip:" << ip.toStdString() << "logined:" << logined;
-    _login_hosts.insert(ip, logined);
-    if (_client) {
+    {
+        QMutexLocker lk(&_state_lock);
+        if (logined)
+            _login_hosts.insert(ip, true);
+        else
+            _login_hosts.remove(ip);
+    }
+    if (logined && _client) {
         DLOG << "Starting client heartbeat";
         _client->startHeartbeat();
     }
@@ -456,10 +705,13 @@ bool SessionWorker::isClientLogin(QString &ip)
     DLOG << "Checking if client is logged in:" << ip.toStdString();
     bool foundValue = false;
     bool hasConnected = false;
-    auto it = _login_hosts.find(ip);
-    if (it != _login_hosts.end()) {
-        foundValue = it.value();
-        DLOG << "Found login status in hosts:" << foundValue;
+    {
+        QMutexLocker lk(&_state_lock);
+        auto it = _login_hosts.find(ip);
+        if (it != _login_hosts.end()) {
+            foundValue = it.value();
+            DLOG << "Found login status in hosts:" << foundValue;
+        }
     }
 
     if (_client && _client->hasConnected(ip.toStdString())) {
@@ -472,9 +724,12 @@ bool SessionWorker::isClientLogin(QString &ip)
 
 bool SessionWorker::isServerLogined(const QString &ip)
 {
-    auto it = _login_hosts.constFind(ip);
-    if (it == _login_hosts.constEnd() || !it.value())
-        return false;
+    {
+        QMutexLocker lk(&_state_lock);
+        auto it = _login_hosts.constFind(ip);
+        if (it == _login_hosts.constEnd() || !it.value())
+            return false;
+    }
 
     const bool connected = _server && _server->hasConnected(ip.toStdString());
     DLOG << "Checking server session for:" << ip.toStdString()
@@ -604,10 +859,21 @@ void SessionWorker::handleRemoteDisconnected(const QString &remote)
         DLOG << "Clearing connected address";
         _connectedAddress = "";
     }
-    auto it = _login_hosts.find(remote);
-    if (it != _login_hosts.end()) {
-        DLOG << "Removing host from login list";
-        _login_hosts.erase(it);
+    {
+        QMutexLocker lk(&_state_lock);
+        auto it = _login_hosts.find(remote);
+        if (it != _login_hosts.end()) {
+            DLOG << "Removing host from login list";
+            _login_hosts.erase(it);
+        }
+        // Authentication is bound to a server connection; drop every cached
+        // connection id that belongs to this address.
+        for (auto conn = _authenticated_conns.begin(); conn != _authenticated_conns.end();) {
+            if (peerIpOf(conn->toStdString()) == remote)
+                conn = _authenticated_conns.erase(conn);
+            else
+                ++conn;
+        }
     }
 }
 

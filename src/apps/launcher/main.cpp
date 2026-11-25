@@ -1,4 +1,4 @@
-﻿// SPDX-FileCopyrightText: 2023-2024 UnionTech Software Technology Co., Ltd.
+﻿// SPDX-FileCopyrightText: 2023 - 2026 UnionTech Software Technology Co., Ltd.
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -14,9 +14,10 @@
 #include <QThread>
 
 #define COO_SESSION_PORT 51588
-#define COO_HARD_PIN "515616"
 
 #define COO_WEB_PORT 51568
+
+#define COO_HARD_PIN "515616"
 
 using namespace deepin_cross;
 
@@ -24,7 +25,9 @@ int main(int argc, char** argv)
 {
     CommonUitls::initLog();
 
-    ExtenMessageHandler msg_cb([](int32_t mask, const picojson::value &json_value, std::string *res_msg) -> bool {
+    ExtenMessageHandler msg_cb([](int32_t mask, const picojson::value &json_value,
+                                  bool authenticated, std::string *res_msg) -> bool {
+        Q_UNUSED(authenticated)
         LOG << "Main >> " << mask <<" msg_cb, json_msg: " << json_value;
         return false;
     });

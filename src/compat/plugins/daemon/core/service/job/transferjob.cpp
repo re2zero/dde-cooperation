@@ -1,12 +1,10 @@
-﻿// SPDX-FileCopyrightText: 2023 - 2026 UnionTech Software Technology Co., Ltd.
+// SPDX-FileCopyrightText: 2023 - 2026 UnionTech Software Technology Co., Ltd.
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "transferjob.h"
-#include "co/log.h"
-#include "co/fs.h"
-#include "co/path.h"
-#include "co/co.h"
+#include "common/compatlog.h"
+#include "common/compatbase.h"
 #include "common/constant.h"
 #include "common/commonstruct.h"
 #include "service/fsadapter.h"
@@ -27,10 +25,10 @@
 // Security helper: check if resolved target is within baseDir (inclusive)
 // Uses lexically_normal for syntactic path normalization (resolves . and ..)
 // without filesystem access, preventing path traversal via ../ sequences.
-static bool isPathWithinDir(const fastring &target, const fastring &baseDir) {
+static bool isPathWithinDir(const std::string &target, const std::string &baseDir) {
     namespace fs = std::filesystem;
-    fs::path resolvedTarget = fs::path(target.c_str()).lexically_normal();
-    fs::path resolvedBase = fs::path(baseDir.c_str()).lexically_normal();
+    std::filesystem::path resolvedTarget = std::filesystem::path(target.c_str()).lexically_normal();
+    std::filesystem::path resolvedBase = std::filesystem::path(baseDir.c_str()).lexically_normal();
     if (resolvedTarget == resolvedBase) return true;
     auto targetStr = resolvedTarget.string();
     auto baseStr = resolvedBase.string();
@@ -73,7 +71,7 @@ TransferJob::~TransferJob()
     }
 }
 
-bool TransferJob::initRpc(fastring target, uint16 port)
+bool TransferJob::initRpc(std::string target, uint16 port)
 {
     _tar_ip = target;
     _tar_port = port;
@@ -119,7 +117,7 @@ bool TransferJob::initRpc(fastring target, uint16 port)
 }
 
 // 先调用initrpc, 在调用initjob
-void TransferJob::initJob(fastring appname, fastring targetappname, int id, fastring path, bool sub, fastring savedir, bool write)
+void TransferJob::initJob(std::string appname, std::string targetappname, int id, std::string path, bool sub, std::string savedir, bool write)
 {
     _app_name = appname;
     _tar_app_name = targetappname;
@@ -129,7 +127,7 @@ void TransferJob::initJob(fastring appname, fastring targetappname, int id, fast
     _savedir = savedir;
     _writejob = write;
     _status = INIT;
-    _save_fulldir = path::join(DaemonConfig::instance()->getStorageDir(_app_name), _savedir);
+    _save_fulldir = compat::path::join(DaemonConfig::instance()->getStorageDir(_app_name), _savedir);
     if (!isPathWithinDir(_save_fulldir, DaemonConfig::instance()->getStorageDir(_app_name))) {
         ELOG << "path traversal blocked: _save_fulldir=" << _save_fulldir
              << " storagedir=" << DaemonConfig::instance()->getStorageDir(_app_name);
@@ -137,41 +135,41 @@ void TransferJob::initJob(fastring appname, fastring targetappname, int id, fast
     }
     if (_writejob) {
         Comshare::instance()->updateStatus(CURRENT_STATUS_TRAN_FILE_RCV);
-        fastring fullpath = _save_fulldir;
+        std::string fullpath = _save_fulldir;
         FSAdapter::newFileByFullPath(fullpath.c_str(), true);
     } else {
         Comshare::instance()->updateStatus(CURRENT_STATUS_TRAN_FILE_SEN);
     }
 }
 
-void TransferJob::setFileName(const fastring &name, const fastring &acName)
+void TransferJob::setFileName(const std::string &name, const std::string &acName)
 {
     QWriteLocker lk(&_file_name_maps_lock);
     _file_name_maps.remove(name);
     _file_name_maps.insert(name, acName);
 }
 
-fastring TransferJob::acName(const fastring &name)
+std::string TransferJob::acName(const std::string &name)
 {
     QReadLocker lk(&_file_name_maps_lock);
     return _file_name_maps.value(name);
 }
 
-fastring TransferJob::getSaveFullpath(const fastring &rootdir, const fastring &filename)
+std::string TransferJob::getSaveFullpath(const std::string &rootdir, const std::string &filename)
 {
     // V20 增强：第一层安全检查（文件名合法性）
     if (filename.empty()) {
         ELOG << "Empty filename rejected";
         return "";
     }
-    if (filename.contains("..") || filename.starts_with("/") || filename.starts_with("\\")) {
+    if (filename.find("..") != std::string::npos || filename.rfind("/", 0) == 0 || filename.rfind("\\", 0) == 0) {
         ELOG << "Path traversal attempt detected, filename rejected: " << filename;
         return "";
     }
 
     // 第一层子目录已存在则尝试获取已重命名后的名字，比如 abc/ddd/eee.txt -> abc(1)/ddd/eee.txt
     auto acfilename = filename;
-    if (acfilename.contains("/")) {
+    if (acfilename.find('/') != std::string::npos) {
         auto first = acfilename.substr(0, acfilename.find_first_of("/"));
         auto acFirst = acName(first);
         if (!acFirst.empty()) {
@@ -186,22 +184,22 @@ fastring TransferJob::getSaveFullpath(const fastring &rootdir, const fastring &f
         }
     }
 
-    fastring fullpath = path::join(rootdir, acfilename);
+    std::string fullpath = compat::path::join(rootdir, acfilename);
 
     // isPathWithinDir 只做词法规范化（. / ..），realpath 额外处理符号链接
     // 以 DaemonConfig::getStorageDir() 作为可信根目录，而非客户端传来的 rootdir
-    fastring allowedRoot = DaemonConfig::instance()->getStorageDir(_app_name);
+    std::string allowedRoot = DaemonConfig::instance()->getStorageDir(_app_name);
     char *realRoot = resolveRealPath(allowedRoot.c_str());
     char *realFull = resolveRealPath(fullpath.c_str());
     if (realFull == nullptr) {
-        std::pair<fastring, fastring> pairs = path::split(fullpath);
-        fastring parentDir = pairs.first;
+        std::pair<std::string, std::string> pairs = compat::path::split(fullpath);
+        std::string parentDir = pairs.first;
         realFull = resolveRealPath(parentDir.c_str());
     }
     if (realRoot != nullptr && realFull != nullptr) {
-        fastring rootPath(realRoot);
-        fastring fullPath(realFull);
-        if (!fullPath.starts_with(rootPath)) {
+        std::string rootPath(realRoot);
+        std::string fullPath(realFull);
+        if (fullPath.rfind(rootPath, 0) != 0) {
             ELOG << "Path traversal detected! Target outside allowed directory: " << fullpath;
             free(realRoot);
             free(realFull);
@@ -219,7 +217,7 @@ fastring TransferJob::getSaveFullpath(const fastring &rootdir, const fastring &f
     return fullpath;
 }
 
-bool TransferJob::createFile(const fastring fullpath, const bool isDir)
+bool TransferJob::createFile(const std::string fullpath, const bool isDir)
 {
     if (fullpath.empty()) {
         ELOG << "Try create file with empty path: " << fullpath;
@@ -231,7 +229,7 @@ bool TransferJob::createFile(const fastring fullpath, const bool isDir)
 
 void TransferJob::start()
 {
-    atomic_store(&_status, STARTED);
+    _status.store(STARTED);
     _mark_canceled = false;
 
     if (_writejob) {
@@ -244,12 +242,12 @@ void TransferJob::start()
         DLOG << "doTransfileJob path to save:" << _savedir;
         //并行读取文件数据
         QUNIGO([this]() {
-            co::Json pathJson;
+            compat::Json pathJson;
             pathJson.parse_from(_path);
             for (uint32 i = 0; i < pathJson.array_size(); i++) {
-                fastring jobpath = pathJson[i].as_string();
-                std::pair<fastring, fastring> pairs = path::split(jobpath);
-                fastring rootpath = pairs.first.c_str();
+                std::string jobpath = pathJson[i].as_string();
+                std::pair<std::string, std::string> pairs = compat::path::split(jobpath);
+                std::string rootpath = pairs.first.c_str();
                 scanPath(rootpath, jobpath, true);
             }
             QSharedPointer<FSDataBlock> blocks(new FSDataBlock);
@@ -261,9 +259,9 @@ void TransferJob::start()
 
             DLOG << "read job start path: " << pathJson;
             for (uint32 i = 0; i < pathJson.array_size(); i++) {
-                fastring jobpath = pathJson[i].as_string();
-                std::pair<fastring, fastring> pairs = path::split(jobpath);
-                fastring rootpath = pairs.first.c_str();
+                std::string jobpath = pathJson[i].as_string();
+                std::pair<std::string, std::string> pairs = compat::path::split(jobpath);
+                std::string rootpath = pairs.first.c_str();
                 scanPath(rootpath, jobpath, false);
             }
             QSharedPointer<FSDataBlock> block(new FSDataBlock);
@@ -279,7 +277,7 @@ void TransferJob::start()
     handleBlockQueque();
 
     // 自己完成了
-    co::sleep(100);
+    compat::sleep(100);
     emit notifyJobFinished(_jobid);
 }
 
@@ -287,23 +285,23 @@ void TransferJob::stop(const bool notify)
 {
     _not_notify = !notify;
     DLOG << "(" << _jobid << ") stop now!";
-    atomic_store(&_status, STOPED);
+    _status.store(STOPED);
 }
 
 void TransferJob::waitFinish()
 {
     DLOG << "(" << _jobid << ") wait write finish!";
-    atomic_store(&_status, WAIT_DONE);
+    _status.store(WAIT_DONE);
 }
 
 bool TransferJob::ended()
 {
-    return unlikely(_status == STOPED);
+    return _status.load() == STOPED;
 }
 
 bool TransferJob::isRunning()
 {
-    return unlikely(_status == STARTED);
+    return _status.load() == STARTED;
 }
 
 bool TransferJob::isWriteJob()
@@ -311,7 +309,7 @@ bool TransferJob::isWriteJob()
     return _writejob;
 }
 
-fastring TransferJob::getAppName()
+std::string TransferJob::getAppName()
 {
     return _app_name;
 }
@@ -321,10 +319,11 @@ void TransferJob::cancel(bool notify)
     DLOG << "job cancel: " << notify;
     _mark_canceled = true;
     if (notify) {
-        atomic_cas(&_status, STARTED, CANCELING);   // 如果运行，则赋值取消
+        int expected = STARTED;
+        _status.compare_exchange_strong(expected, CANCELING);   // 如果运行，则赋值取消
     } else {
         handleJobStatus(JOB_TRANS_CANCELED);   // 通知前端应用作业已取消
-        atomic_store(&_status, STOPED);
+        _status.store(STOPED);
     }
 }
 
@@ -359,13 +358,13 @@ bool TransferJob::offlineCancel(const QString &ip)
     return true;
 }
 
-fastring TransferJob::getSubdir(const char *path, const char *root)
+std::string TransferJob::getSubdir(const char *path, const char *root)
 {
-    fastring indir = "";
-    std::pair<fastring, fastring> pairs = path::split(fastring(path));
-    fastring filedir = pairs.first;
-    indir = filedir.size() > strlen(root) ? filedir.remove_prefix(root) : "";
-    fastring subdir = path::join(indir.c_str(), "");
+    std::string indir = "";
+    std::pair<std::string, std::string> pairs = compat::path::split(std::string(path));
+    std::string filedir = pairs.first;
+    indir = filedir.size() > strlen(root) ? filedir.substr(strlen(root)) : "";
+    std::string subdir = compat::path::join(indir.c_str(), "");
     return subdir;
 }
 
@@ -392,7 +391,7 @@ void TransferJob::handleBlockQueque()
         }
         auto block = popQueue();
         if (block.isNull() && (_writejob || (!timeout && !counted))) {
-            co::sleep(10);
+            compat::sleep(10);
             continue;
         }
 
@@ -404,20 +403,20 @@ void TransferJob::handleBlockQueque()
         if (counted == false)
             counted = block->flags & JobTransFileOp::FILE_COUNTED;
 
-        fastring fullpath = "";
+        std::string fullpath = "";
         bool needReacquire = (_jobid == 1000) && ((block->flags & JobTransFileOp::FIlE_DIR_CREATE)
                                                   || (block->flags & JobTransFileOp::FIlE_CREATE));
         bool reacquired = false;
         //加解密文件名，防止路径特殊导致序列化卡住
         if (!block->filename.empty()) {
-            fastring filename = _writejob ? Util::decodeBase64(block->filename.c_str())
+            std::string filename = _writejob ? Util::decodeBase64(block->filename.c_str())
                                           : Util::encodeBase64(block->filename.c_str());
 
             //真实全路径，写文件和通知
             fullpath = getSaveFullpath(block->rootdir, _writejob ? filename : block->filename);
             if (needReacquire) {
                 // 跨端：需重新命名已存在文件
-                fastring newPath;
+                std::string newPath;
                 reacquired = FSAdapter::reacquirePath(fullpath, &newPath);
                 if (reacquired) {
                     fullpath = newPath;
@@ -435,7 +434,7 @@ void TransferJob::handleBlockQueque()
 
             if (reacquired && !exception) {
                 //创建文件成功，记录文件名对应的新名称
-                auto ft = fullpath.replace(block->rootdir + "/", "");
+                auto ft = compat::str::replace(fullpath, block->rootdir + "/", "");
                 DLOG << "record: " << block->filename << " to:" << ft;
                 setFileName(block->filename, ft);
             }
@@ -483,7 +482,7 @@ void TransferJob::handleBlockQueque()
     }
     LOG << "trans job end: " << _jobid << " freebytes = " << _device_free_size
         << "  not enought = " << _device_not_enough;
-    atomic_store(&_status, STOPED);
+    _status.store(STOPED);
 }
 
 void TransferJob::handleUpdate(FileTransRe result, const char *path, const char *emsg)
@@ -505,7 +504,7 @@ void TransferJob::handleUpdate(FileTransRe result, const char *path, const char 
 void TransferJob::handleJobStatus(int status)
 {
     QString appname(_app_name.c_str());
-    fastring fullpath = path::join(
+    std::string fullpath = compat::path::join(
                 DaemonConfig::instance()->getStorageDir(_app_name), _savedir);
     QString savepath(fullpath.c_str());
     if (_device_not_enough)
@@ -519,7 +518,7 @@ void TransferJob::handleJobStatus(int status)
 
 void TransferJob::handleTransStatus(int status, const FileInfo &info)
 {
-    co::Json filejson = info.as_json();
+    compat::Json filejson = info.as_json();
     QString appname(_app_name.c_str());
     QString fileinfo(filejson.str().c_str());
 
@@ -543,15 +542,15 @@ int TransferJob::queueCount() const
     return _block_queue.count();
 }
 
-void TransferJob::scanPath(const fastring root, const fastring path, const bool acTotal)
+void TransferJob::scanPath(const std::string root, const std::string path, const bool acTotal)
 {
 #ifdef linux
     // 链接文件不拷贝
-    if (fs::isSymlink(path.c_str()))
+    if (compat::fs::isSymlink(path.c_str()))
         return;
 #endif
     _fileid++;
-    fastring subdir = getSubdir(path.c_str(), root.c_str());
+    std::string subdir = getSubdir(path.c_str(), root.c_str());
     FileEntry *entry = new FileEntry();
     if (FSAdapter::getFileEntry(path.c_str(), &entry) < 0) {
         ELOG << "get file entry error !!!!";
@@ -561,14 +560,14 @@ void TransferJob::scanPath(const fastring root, const fastring path, const bool 
 
     if (_status >= STOPED)
         return;
-    if (fs::isdir(path.c_str())) {
+    if (compat::fs::isdir(path.c_str())) {
         _total_size += 4096;
         if (!acTotal) {
             QSharedPointer<FSDataBlock> block(new FSDataBlock);
             block->job_id = _jobid;
             block->rootdir = root;
             auto file = path;
-            block->filename = file.replace(root, "");
+            block->filename = compat::str::replace(file, root, "");
             block->blk_id = 0;
             block->flags = JobTransFileOp::FIlE_DIR_CREATE;
             block->data_size = 0;
@@ -581,39 +580,39 @@ void TransferJob::scanPath(const fastring root, const fastring path, const bool 
     }
 }
 
-void TransferJob::readPath(fastring path, fastring root, const bool acTotal)
+void TransferJob::readPath(std::string path, std::string root, const bool acTotal)
 {
     if (_status >= STOPED)
         return;
 
-    fastring dirpath = path::join(path, "");
-    fs::dir d(dirpath);
+    std::string dirpath = compat::path::join(path, "");
+    compat::fs::dir d(dirpath);
     auto v = d.all();   // 读取所有子项
-    for (const fastring &file : v) {
+    for (const std::string &file : v) {
         if (_status >= STOPED)
             return;
-        fastring file_path = path::join(d.path(), file.c_str());
+        std::string file_path = compat::path::join(d.path(), file.c_str());
         scanPath(root, file_path, acTotal);
     }
 }
 
-bool TransferJob::readFile(fastring filepath, int fileid, fastring subdir, const bool acTotal)
+bool TransferJob::readFile(std::string filepath, int fileid, std::string subdir, const bool acTotal)
 {
     if (_status >= STOPED)
         return false;
 
-    std::pair<fastring, fastring> pairs = path::split(fastring(filepath));
+    std::pair<std::string, std::string> pairs = compat::path::split(std::string(filepath));
 
-    fastring filename = pairs.second;
+    std::string filename = pairs.second;
 
-    fastring subname = path::join(subdir, filename.c_str());
+    std::string subname = compat::path::join(subdir, filename.c_str());
     readFileBlock(filepath, fileid, subname, acTotal);
     return true;
 }
 
-void TransferJob::readFileBlock(fastring filepath, int fileid, const fastring subname, const bool acTotal)
+void TransferJob::readFileBlock(std::string filepath, int fileid, const std::string subname, const bool acTotal)
 {
-    if (filepath.empty() || fileid < 0 || !fs::exists(filepath)) {
+    if (filepath.empty() || fileid < 0 || !compat::fs::exists(filepath)) {
         ELOG << "readFileBlock file is invaild" << filepath;
         return;
     }
@@ -622,7 +621,7 @@ void TransferJob::readFileBlock(fastring filepath, int fileid, const fastring su
         return;
 
     size_t block_size = BLOCK_SIZE;
-    int64 file_size = fs::fsize(filepath);
+    int64 file_size = compat::fs::fsize(filepath);
 
     if (acTotal) {
         _total_size += static_cast<int64>(file_size <= 0 ? 4096 : file_size);
@@ -631,7 +630,7 @@ void TransferJob::readFileBlock(fastring filepath, int fileid, const fastring su
 
     // 文件所在根目录
     auto file = filepath;
-    auto root = file.replace(subname, "");
+    auto root = compat::str::replace(file, subname, "");
 
     if (file_size <= 0) {
         // error file or 0B file.
@@ -650,7 +649,7 @@ void TransferJob::readFileBlock(fastring filepath, int fileid, const fastring su
     int64 read_size = 0;
     uint32 block_id = 0;
 
-    fs::file fd(filepath, 'r');
+    compat::fs::file fd(filepath, 'r');
     if (!fd) {
         ELOG << "open file failed: " << filepath;
         return;
@@ -663,7 +662,7 @@ void TransferJob::readFileBlock(fastring filepath, int fileid, const fastring su
     do {
         // 最多100个数据块->100M 限制内存使用
         if (self && self->queueCount() > 100) {
-            co::sleep(10);
+            compat::sleep(10);
             continue;
         }
 
@@ -690,7 +689,7 @@ void TransferJob::readFileBlock(fastring filepath, int fileid, const fastring su
         block->flags = (resize == 0 || read_size + static_cast<int64>(resize) >= file_size) ? block->flags | JobTransFileOp::FILE_CLOSE : block->flags;
         block->data_size = static_cast<int64>(resize);
         // copy binrary data
-        fastring bufdata(buf, resize);
+        std::string bufdata(buf, resize);
         block->data = bufdata;
         if (self)
             self->pushQueque(block);
@@ -709,7 +708,7 @@ void TransferJob::readFileBlock(fastring filepath, int fileid, const fastring su
     fd.close();
 }
 
-bool TransferJob::writeAndCreateFile(const QSharedPointer<FSDataBlock> block, const fastring fullpath)
+bool TransferJob::writeAndCreateFile(const QSharedPointer<FSDataBlock> block, const std::string fullpath)
 {
     _notify_fileid = block->file_id;
 
@@ -740,7 +739,7 @@ bool TransferJob::writeAndCreateFile(const QSharedPointer<FSDataBlock> block, co
         return true;
     }
 
-    fastring buffer = block->data;
+    std::string buffer = block->data;
     size_t len = buffer.size();
     int64 offset = static_cast<int64>(block->blk_id * BLOCK_SIZE);
     // ELOG << "file : " << name << " write : " << len << " totol = " << _total_size << " curent " <<  _cur_size
@@ -778,7 +777,7 @@ bool TransferJob::sendToRemote(const QSharedPointer<FSDataBlock> block)
     file_block.flags = block->flags;
     file_block.data_size = block->data_size;
     _notify_fileid = block->file_id;
-    fastring buffer = block->data;
+    std::string buffer = block->data;
     QByteArray data(buffer.c_str(), static_cast<int>(block->data.empty() ? 0 : block->data_size));
     // DLOG << "( ==== " << _jobid << ") send block " << block->filename << " size: " << block->data_size
     //     << " ----- = " << queueCount() << "  flags  == " << block->flags;
@@ -789,7 +788,7 @@ bool TransferJob::sendToRemote(const QSharedPointer<FSDataBlock> block)
         QMutexLocker g(&_send_mutex);
         res = _remote->doSendProtoMsg(FS_DATA, file_block.as_json().str().c_str(), data);
     }
-    co::Json resJson;
+    compat::Json resJson;
     if (res.protocolType == FS_DATA && resJson.parse_from(res.data)) {
         FileTransResponse transres;
         transres.from_json(resJson);

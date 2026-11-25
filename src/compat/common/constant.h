@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2023 UnionTech Software Technology Co., Ltd.
+// SPDX-FileCopyrightText: 2023 - 2026 UnionTech Software Technology Co., Ltd.
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -207,8 +207,9 @@ enum CurrentStatus {
     CURRENT_STATUS_SHARE_START = 6, // 5键鼠共享中
 };
 
-//QUNIGO不会持续创建新线程，导致co的内存泄露
-#if defined(DISABLE_GO)
+// The v20 compatibility code used coost coroutines for fire-and-forget work.
+// QThreadPool is used everywhere now so the daemon no longer depends on the
+// coost runtime (and its coroutine scheduling) at all.
 #include <QThreadPool>
 class LambdaTask : public QRunnable {
 public:
@@ -229,8 +230,4 @@ private:
         std::thread coThread(__VA_ARGS__); \
         coThread.detach(); \
     } while(0)
-#else
-    #define UNIGO go
-    #define QUNIGO go
-#endif
 #endif // CONSTANT_H

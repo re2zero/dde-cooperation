@@ -32,8 +32,13 @@ add_library(${PROJECT_NAME} STATIC
 )
 set_target_properties(${PROJECT_NAME} PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
-#zrpc library which has include protobuf library
-target_link_libraries(${PROJECT_NAME} zrpc)
+# message.pb.cc needs protobuf; the removed zrpc library used to provide it
+# transitively.
+if(TARGET protobuf::libprotobuf)
+    target_link_libraries(${PROJECT_NAME} protobuf::libprotobuf)
+elseif(DEFINED PROTOBUF_LIB)
+    target_link_libraries(${PROJECT_NAME} ${PROTOBUF_LIB})
+endif()
 target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_BINARY_DIR})
 
 #install library file

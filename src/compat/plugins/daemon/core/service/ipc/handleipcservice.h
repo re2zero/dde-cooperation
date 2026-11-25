@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2023 UnionTech Software Technology Co., Ltd.
+// SPDX-FileCopyrightText: 2023 - 2026 UnionTech Software Technology Co., Ltd.
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -7,7 +7,7 @@
 
 #include <QObject>
 #include <QMap>
-#include "co/json.h"
+#include "common/compatbase.h"
 #include <slotipc/service.h>
 
 #include "common/commonstruct.h"
@@ -26,6 +26,10 @@ public:
 
     Q_INVOKABLE void setAuthPassword(const QString& password);
     Q_INVOKABLE QString getAuthPassword();
+
+    // Answer to the login confirmation dialog for a v20 peer that does not
+    // send a PIN (cooperation clients).
+    Q_INVOKABLE void doReplyLoginConfirm(const QString &ip, bool agree);
 
 
     Q_INVOKABLE void sendMiscMessage(const QString& appname, const QString &jsonmsg);
@@ -69,18 +73,18 @@ public slots:
     void handleSessionSignal(const QString& signalName, int type, const QString& message);
 
     void newTransSendJob(QString session, const QString targetSession, int jobId, QStringList paths, bool sub, QString savedir);
-    void handleNodeRegister(bool unreg, const co::Json &info);
-    void handleBackApplyTransFiles(co::Json param);
+    void handleNodeRegister(bool unreg, const compat::Json &info);
+    void handleBackApplyTransFiles(compat::Json param);
     // void handleConnectClosed(const quint16 port);
-    void handleTryConnect(co::Json json);
-    bool handleJobActions(const uint type, co::Json &msg);
-    void handleShareConnect(co::Json json);
-    void handleShareDisConnect(co::Json json);
-    void handleShareConnectReply(co::Json json);
-    void handleShareConnectDisApply(co::Json json);
-    void handleShareStop(co::Json json);
-    void handleDisConnectCb(co::Json json);
-    void handleSearchDevice(co::Json json);
+    void handleTryConnect(compat::Json json);
+    bool handleJobActions(const uint type, compat::Json &msg);
+    void handleShareConnect(compat::Json json);
+    void handleShareDisConnect(compat::Json json);
+    void handleShareConnectReply(compat::Json json);
+    void handleShareConnectDisApply(compat::Json json);
+    void handleShareStop(compat::Json json);
+    void handleDisConnectCb(compat::Json json);
+    void handleSearchDevice(compat::Json json);
 
 private:
     QMap<QString, QString> _sessionIDs;

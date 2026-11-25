@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2026 UnionTech Software Technology Co., Ltd.
+﻿// SPDX-FileCopyrightText: 2026 - 2026 UnionTech Software Technology Co., Ltd.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include <gtest/gtest.h>
@@ -167,7 +167,7 @@ TEST_F(SessionManagerTest, CancelSyncFileEmptyReason)
 
 TEST_F(SessionManagerTest, SetSessionExtCallback)
 {
-    auto cb = [](int32_t mask, const picojson::value &, std::string *) -> bool {
+    auto cb = [](int32_t mask, const picojson::value &, bool, std::string *) -> bool {
         return false;
     };
     mgr->setSessionExtCallback(cb);

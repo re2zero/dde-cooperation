@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2026 UnionTech Software Technology Co., Ltd.
+// SPDX-FileCopyrightText: 2026 - 2026 UnionTech Software Technology Co., Ltd.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include <gtest/gtest.h>
@@ -42,9 +42,9 @@
 
 // Stub replacements for DiscoveryJob methods that dereference null pointers.
 // Signatures must match the real member functions exactly.
-static void stub_updateAnnouncApp(DiscoveryJob *, bool /*remove*/, const fastring /*info*/) {}
-static void stub_updateAnnouncShare(DiscoveryJob *, const bool /*remove*/, const fastring /*connectIP*/) {}
-static fastring stub_baseInfo(const DiscoveryJob *) { return fastring(); }
+static void stub_updateAnnouncApp(DiscoveryJob *, bool /*remove*/, const std::string /*info*/) {}
+static void stub_updateAnnouncShare(DiscoveryJob *, const bool /*remove*/, const std::string /*connectIP*/) {}
+static std::string stub_baseInfo(const DiscoveryJob *) { return std::string(); }
 static void stub_searchDeviceByIp(DiscoveryJob *, const QString & /*ip*/, const bool /*remove*/) {}
 static void stub_handleDoSendProtoMsg(SendRpcWork *, const uint32 /*type*/,
                                       const QString /*appName*/,
@@ -428,7 +428,7 @@ TEST(HandleIpcServiceTest, HandleBackApplyTransFiles)
     info.tarAppname = "target";
     info.machineName = "machine";
     info.type = APPLY_TRANS_APPLY;
-    co::Json param = info.as_json();
+    compat::Json param = info.as_json();
 
     QSignalSpy spy(SendRpcService::instance(),
                    &SendRpcService::workDoSendProtoMsg);
@@ -604,7 +604,7 @@ TEST(HandleIpcServiceCovTest, HandleJobActionsResume)
     param.appname = "jaapp";
     param.job_id = 7;
     param.session = "s";
-    co::Json json = param.as_json();
+    compat::Json json = param.as_json();
     bool ret = svc.handleJobActions(BACK_RESUME_JOB, json);
     EXPECT_FALSE(ret);
 }
@@ -616,7 +616,7 @@ TEST(HandleIpcServiceCovTest, HandleJobActionsCancel)
     ipc::TransJobParam param;
     param.appname = "jaapp2";
     param.job_id = 8;
-    co::Json json = param.as_json();
+    compat::Json json = param.as_json();
     bool ret = svc.handleJobActions(BACK_CANCEL_JOB, json);
     EXPECT_FALSE(ret);
 }
@@ -628,7 +628,7 @@ TEST(HandleIpcServiceCovTest, HandleJobActionsPause)
     ipc::TransJobParam param;
     param.appname = "jaapp3";
     param.job_id = 9;
-    co::Json json = param.as_json();
+    compat::Json json = param.as_json();
     // unknown type -> TRANS_PAUSE path
     bool ret = svc.handleJobActions(9999, json);
     EXPECT_FALSE(ret);
@@ -642,7 +642,7 @@ TEST(HandleIpcServiceCovTest, HandleBackApplyTransFiles)
     info.appname = "baapp";
     info.tarAppname = "batarget";
     info.type = APPLY_TRANS_CONFIRM;
-    co::Json json = info.as_json();
+    compat::Json json = info.as_json();
     svc.handleBackApplyTransFiles(json);
     SUCCEED();
 }
@@ -654,7 +654,7 @@ TEST(HandleIpcServiceCovTest, HandleSearchDevice)
     SearchDevice de;
     de.ip = "1.2.3.4";
     de.remove = false;
-    co::Json json = de.as_json();
+    compat::Json json = de.as_json();
     svc.handleSearchDevice(json);
     // async (QUNIGO) - just exercise the parse path
     SUCCEED();
@@ -669,7 +669,7 @@ TEST(HandleIpcServiceCovTest, HandleShareConnectFromRpc)
     param.tarAppname = "sctarget";
     param.tarIp = "1.2.3.4";
     param.ip = "1.2.3.4";
-    co::Json json = param.as_json();
+    compat::Json json = param.as_json();
     svc.handleShareConnect(json);
     EXPECT_EQ(Comshare::instance()->currentStatus(), CURRENT_STATUS_SHARE_CONNECT);
     Comshare::instance()->updateStatus(CURRENT_STATUS_DISCONNECT);
@@ -682,7 +682,7 @@ TEST(HandleIpcServiceCovTest, HandleShareDisConnectFromRpc)
     ShareDisConnect info;
     info.appName = "sdapp";
     info.tarAppname = "";
-    co::Json json = info.as_json();
+    compat::Json json = info.as_json();
     svc.handleShareDisConnect(json);
     EXPECT_EQ(Comshare::instance()->currentStatus(), CURRENT_STATUS_DISCONNECT);
 }
@@ -694,7 +694,7 @@ TEST(HandleIpcServiceCovTest, HandleShareConnectReplyConfirm)
     ShareConnectReply reply;
     reply.appName = "rcapp";
     reply.reply = SHARE_CONNECT_COMFIRM;
-    co::Json json = reply.as_json();
+    compat::Json json = reply.as_json();
     svc.handleShareConnectReply(json);
     SUCCEED();
 }
@@ -706,7 +706,7 @@ TEST(HandleIpcServiceCovTest, HandleShareConnectReplyRefuse)
     ShareConnectReply reply;
     reply.appName = "rcapp2";
     reply.reply = SHARE_CONNECT_REFUSE;
-    co::Json json = reply.as_json();
+    compat::Json json = reply.as_json();
     svc.handleShareConnectReply(json);
     EXPECT_EQ(Comshare::instance()->currentStatus(), CURRENT_STATUS_DISCONNECT);
 }
@@ -718,7 +718,7 @@ TEST(HandleIpcServiceCovTest, HandleShareStopFromRpc)
     ShareStop st;
     st.appName = "ssapp";
     st.tarAppname = "sstarget";
-    co::Json json = st.as_json();
+    compat::Json json = st.as_json();
     svc.handleShareStop(json);
     EXPECT_EQ(Comshare::instance()->currentStatus(), CURRENT_STATUS_DISCONNECT);
 }
@@ -730,7 +730,7 @@ TEST(HandleIpcServiceCovTest, HandleDisConnectCbFromRpc)
     ShareDisConnect info;
     info.appName = "dcapp";
     info.tarAppname = "";
-    co::Json json = info.as_json();
+    compat::Json json = info.as_json();
     svc.handleDisConnectCb(json);
     EXPECT_EQ(Comshare::instance()->currentStatus(), CURRENT_STATUS_DISCONNECT);
 }
@@ -741,7 +741,7 @@ TEST(HandleIpcServiceCovTest, HandleShareConnectDisApply)
     HandleIpcService svc;
     ShareConnectDisApply reply;
     reply.appName = "daapp";
-    co::Json json = reply.as_json();
+    compat::Json json = reply.as_json();
     svc.handleShareConnectDisApply(json);
     EXPECT_EQ(Comshare::instance()->currentStatus(), CURRENT_STATUS_DISCONNECT);
 }

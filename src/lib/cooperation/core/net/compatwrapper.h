@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2023 UnionTech Software Technology Co., Ltd.
+﻿// SPDX-FileCopyrightText: 2023 - 2026 UnionTech Software Technology Co., Ltd.
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -25,6 +25,7 @@ public:
 
 signals:
     void compatConnectResult(int result, const QString &ip);
+    void compatLoginConfirm(const QString &ip, const QString &name);
 
 private:
     explicit CompatWrapper(QObject *parent = nullptr);

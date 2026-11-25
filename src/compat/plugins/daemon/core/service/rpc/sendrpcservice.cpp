@@ -1,4 +1,4 @@
-﻿// SPDX-FileCopyrightText: 2023 - 2026 UnionTech Software Technology Co., Ltd.
+// SPDX-FileCopyrightText: 2023 - 2026 UnionTech Software Technology Co., Ltd.
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -53,7 +53,7 @@ void SendRpcWork::handleDoSendProtoMsg(const uint32 type, const QString appName,
     SendResult res;
     if (!sender.isNull()) {
         if (type == TRANS_APPLY) {
-            co::Json param;
+            compat::Json param;
             param.parse_from(msg.toStdString());
             ApplyTransFiles info;
             info.from_json(param);
@@ -73,7 +73,7 @@ void SendRpcWork::handleDoSendProtoMsg(const uint32 type, const QString appName,
             }
             res = sender->doSendProtoMsg(type, info.as_json().str().c_str(), data);
         } else if (type == APPLY_SHARE_CONNECT_RES) {
-            co::Json param;
+            compat::Json param;
             param.parse_from(msg.toStdString());
             ShareConnectReply info;
             info.from_json(param);
@@ -127,7 +127,7 @@ void SendRpcWork::handlePing(const QStringList apps)
             if (count > 2) {
                 // 通知客户端ping超时
                 ELOG << "timeout: server no reply ping: " << count;
-                fastring msg = co::Json({{"app", appName.toStdString()}, {"offline", true}}).str();
+                std::string msg = compat::Json({{"app", appName.toStdString()}, {"offline", true}}).str();
                 SendIpcService::instance()->preprocessOfflineStatus(appName, PING_FAILED, msg);
                 SendRpcService::instance()->removePing(appName);
             } else {

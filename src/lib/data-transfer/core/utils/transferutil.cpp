@@ -1,4 +1,4 @@
-﻿#include "transferutil.h"
+#include "transferutil.h"
 
 #include "settinghepler.h"
 #include "optionsmanager.h"
@@ -60,7 +60,7 @@ QString TransferUtil::generateRandomNumber()
 {
     QString randomString;
     for (int i = 0; i < 6; i++) {
-        int randomNumber = QRandomGenerator::global()->bounded(10);   // 生成范围在 0 到 9 之间的随机数
+        int randomNumber = QRandomGenerator::system()->bounded(10);   // 生成范围在 0 到 9 之间的随机数
         randomString.append(QString::number(randomNumber));   // 将随机数转换成字符串并拼接到结果字符串
     }
     return randomString;

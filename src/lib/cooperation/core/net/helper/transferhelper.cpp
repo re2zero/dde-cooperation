@@ -1,4 +1,4 @@
-﻿// SPDX-FileCopyrightText: 2023 - 2026 UnionTech Software Technology Co., Ltd.
+// SPDX-FileCopyrightText: 2023 - 2026 UnionTech Software Technology Co., Ltd.
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -9,6 +9,7 @@
 #include "utils/historymanager.h"
 #include "net/networkutil.h"
 #include "net/cooconstrants.h"
+#include "net/compatwrapper.h"
 
 #include "common/constant.h"
 #include "common/commonutils.h"
@@ -42,6 +43,8 @@ inline constexpr char NotifyRejectAction[] { "reject" };
 inline constexpr char NotifyAcceptAction[] { "accept" };
 inline constexpr char NotifyCloseAction[] { "close" };
 inline constexpr char NotifyViewAction[] { "view" };
+inline constexpr char NotifyLoginRejectAction[] { "login_reject" };
+inline constexpr char NotifyLoginAcceptAction[] { "login_accept" };
 
 using TransHistoryInfo = QMap<QString, QString>;
 Q_GLOBAL_STATIC(TransHistoryInfo, transHistory)
@@ -130,10 +133,12 @@ void TransferHelperPrivate::reportTransferResult(bool result)
 }
 
 void TransferHelperPrivate::notifyMessage(const QString &body, const QStringList &actions, int expireTimeout,
-                                          const QVariantMap &hitMap, bool replaceExisting)
+                                          const QVariantMap &hitMap, bool replaceExisting,
+                                          const QString &title)
 {
 #ifdef __linux__
-    notice->notifyMessage(tr("File transfer"), body, actions, hitMap, expireTimeout, replaceExisting);
+    notice->notifyMessage(title.isEmpty() ? tr("File transfer") : title, body, actions, hitMap,
+                          expireTimeout, replaceExisting);
 #else
     Q_UNUSED(body)
     Q_UNUSED(actions)
@@ -382,6 +387,20 @@ void TransferHelper::updateProgress(int value, const QString &remainTime)
 void TransferHelper::onActionTriggered(const QString &action)
 {
     DLOG << "Action triggered:" << action.toStdString();
+
+    // Login confirmation for a v20 peer that did not send a PIN.
+    if (action == NotifyLoginAcceptAction || action == NotifyLoginRejectAction) {
+        replyLoginConfirm(action == NotifyLoginAcceptAction);
+        return;
+    }
+    // Non-Linux uses the confirmation dialog, whose accept/reject signals
+    // share the transfer action ids.
+    if (!d->loginConfirmIp.isEmpty()
+        && (action == NotifyAcceptAction || action == NotifyRejectAction)) {
+        replyLoginConfirm(action == NotifyAcceptAction);
+        return;
+    }
+
     // clear transfer info
     d->transferInfo.clear();
     if (action == NotifyCancelAction) {
@@ -450,6 +469,40 @@ void TransferHelper::notifyTransferRequest(const QString &nick, const QString &i
     DLOG << "Showing transfer confirmation dialog";
     d->transDialog()->showConfirmDialog(nick);
 #endif
+}
+
+void TransferHelper::notifyLoginRequest(const QString &ip, const QString &name)
+{
+    if (ip.isEmpty())
+        return;
+    DLOG << "Login request from:" << ip.toStdString() << "name:" << name.toStdString();
+    d->loginConfirmIp = ip;
+    const QString who = name.isEmpty() ? ip : name;
+#ifdef __linux__
+    QStringList actions { NotifyLoginRejectAction, tr("Reject"),
+                          NotifyLoginAcceptAction, tr("Accept") };
+    QVariantMap hitMap { { "x-deepin-ShowInNotifyCenter", false } };
+    const QString body = tr("\"%1\" (%2) requests to connect")
+                                 .arg(CommonUitls::elidedText(who, Qt::ElideMiddle, 25), ip);
+    d->notifyMessage(body, actions, 30 * 1000, hitMap, false, tr("Connection request"));
+#else
+    d->transDialog()->showConfirmDialog(who);
+#endif
+}
+
+void TransferHelper::replyLoginConfirm(bool agree)
+{
+    const QString ip = d->loginConfirmIp;
+    d->loginConfirmIp.clear();
+    if (ip.isEmpty())
+        return;
+    DLOG << "Reply login confirmation for:" << ip.toStdString() << "agree:" << agree;
+#ifdef ENABLE_COMPAT
+    auto ipc = CompatWrapper::instance()->ipcInterface();
+    ipc->call("doReplyLoginConfirm", Q_ARG(QString, ip), Q_ARG(bool, agree));
+#endif
+    // v25 sessions run in this process.
+    NetworkUtil::instance()->replyPairingConfirm(ip, agree);
 }
 
 void TransferHelper::handleCancelTransferApply()

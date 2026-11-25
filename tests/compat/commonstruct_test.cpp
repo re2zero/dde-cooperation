@@ -1,9 +1,9 @@
-// SPDX-FileCopyrightText: 2026 UnionTech Software Technology Co., Ltd.
+// SPDX-FileCopyrightText: 2026 - 2026 UnionTech Software Technology Co., Ltd.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include <gtest/gtest.h>
 
-#include "co/json.h"
+#include "common/compatbase.h"
 #include "commonstruct.h"
 
 #include <string>
@@ -13,9 +13,9 @@ namespace {
 template <typename T>
 T roundtrip(const T& src)
 {
-    co::Json j = src.as_json();
-    fastring dumped = j.str();
-    co::Json parsed;
+    compat::Json j = src.as_json();
+    std::string dumped = j.str();
+    compat::Json parsed;
     parsed.parse_from(dumped);
     T dst;
     dst.from_json(parsed);
@@ -197,7 +197,7 @@ TEST(CommonStructTest, AsJsonProducesValidJsonString)
     src.ip = "1.1.1.1";
     src.tarIp = "2.2.2.2";
     src.data = "d";
-    fastring s = src.as_json().str();
+    std::string s = src.as_json().str();
     EXPECT_NE(s.find("appName"), std::string::npos);
     EXPECT_NE(s.find("tarIp"), std::string::npos);
 }
